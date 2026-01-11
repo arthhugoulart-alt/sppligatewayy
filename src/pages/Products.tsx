@@ -16,6 +16,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Product {
@@ -24,22 +31,44 @@ interface Product {
   price: number;
   description: string | null;
   created_at: string;
+  producer_id?: string;
+}
+
+interface Producer {
+  id: string;
+  business_name: string;
 }
 
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [producers, setProducers] = useState<Producer[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: "", price: "", description: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", description: "", producer_id: "" });
   const { toast } = useToast();
   const { user } = useAuth();
 
   useEffect(() => {
     if (user) {
       fetchProducts();
+      fetchProducers();
     }
   }, [user]);
+
+  const fetchProducers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("producers")
+        .select("id, business_name")
+        .order("business_name");
+
+      if (error) throw error;
+      setProducers(data || []);
+    } catch (error) {
+      console.error("Error fetching producers:", error);
+    }
+  };
 
   const fetchProducts = async () => {
     if (!user || !user.email) {
@@ -48,12 +77,12 @@ export default function Products() {
     }
 
     try {
-      // First get the producer ID for the current user
+      // First get the producer ID for the current user (default producer)
       const { data: producer, error: producerError } = await supabase
         .from("producers")
         .select("id")
         .eq("email", user.email)
-        .maybeSingle(); // Use maybeSingle to avoid 406 error if not found
+        .maybeSingle();
 
       if (producerError) {
         console.error("Error fetching producer:", producerError);
@@ -61,16 +90,12 @@ export default function Products() {
         return;
       }
 
-      if (!producer) {
-        console.warn("Producer not found for email:", user.email);
-        setLoading(false);
-        return;
-      }
-
+      // If user has a producer account, fetch their products
+      // Or fetch all products for the user (depends on implementation, assuming user sees all products they have access to)
+      // For now, let's fetch products regardless of producer_id filter to show all products created
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("producer_id", producer.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -88,27 +113,19 @@ export default function Products() {
   };
 
   const handleCreateProduct = async () => {
-    if (!newProduct.name || !newProduct.price) {
+    if (!newProduct.name || !newProduct.price || !newProduct.producer_id) {
       toast({
         variant: "destructive",
         title: "Campos obrigatórios",
-        description: "Preencha nome e preço do produto.",
+        description: "Preencha nome, preço e selecione um recebedor.",
       });
       return;
     }
 
     setIsCreating(true);
     try {
-      const { data: producer } = await supabase
-        .from("producers")
-        .select("id")
-        .eq("email", user?.email)
-        .single();
-
-      if (!producer) throw new Error("Conta de produtor não encontrada.");
-
       const { error } = await supabase.from("products").insert({
-        producer_id: producer.id,
+        producer_id: newProduct.producer_id,
         name: newProduct.name,
         price: parseFloat(newProduct.price),
         description: newProduct.description,
@@ -122,7 +139,7 @@ export default function Products() {
       });
       
       setIsCreateOpen(false);
-      setNewProduct({ name: "", price: "", description: "" });
+      setNewProduct({ name: "", price: "", description: "", producer_id: "" });
       fetchProducts();
 
     } catch (error: any) {
@@ -175,6 +192,24 @@ export default function Products() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Recebedor</Label>
+                  <Select
+                    value={newProduct.producer_id}
+                    onValueChange={(value) => setNewProduct({...newProduct, producer_id: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um recebedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {producers.map((producer) => (
+                        <SelectItem key={producer.id} value={producer.id}>
+                          {producer.business_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label>Nome do Produto</Label>
                   <Input 
