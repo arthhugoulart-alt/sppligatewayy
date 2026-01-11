@@ -45,13 +45,18 @@ Deno.serve(async (req) => {
     }
 
     // 2. Calculate fees
-    // Alterado para 0 como padrão para evitar erro "rejected_by_biz_rule" em testes (auto-fee)
-    // Se producer.platform_fee_percentage for null, usa 0.
     const amount = Number(paymentData.price);
-    const feePercentage = Number(producer.platform_fee_percentage) || 0;
+    
+    // Regra de Negócio: Se não houver taxa definida, assume 10%
+    let feePercentage = Number(producer.platform_fee_percentage);
+    if (isNaN(feePercentage) || feePercentage <= 0) {
+        feePercentage = 10;
+        console.log("Taxa do produtor não definida ou zero. Aplicando taxa padrão de 10%.");
+    }
+
     const applicationFee = Number(((amount * feePercentage) / 100).toFixed(2));
 
-    console.log(`Amount: ${amount}, Fee: ${applicationFee} (${feePercentage}%), Token: ${accessToken.substring(0, 10)}...`);
+    console.log(`[SPLIT DEBUG] Amount: ${amount}, Fee: ${applicationFee} (${feePercentage}%), Producer Token Prefix: ${accessToken.substring(0, 10)}...`);
 
     // CHECK IF THIS IS A TRANSPARENT CHECKOUT (PAYMENT BRICK)
     // Check for 'brick' type explicit flag OR presence of formData
