@@ -43,14 +43,34 @@ export default function Checkout() {
 
   const fetchProduct = async (id: string) => {
     try {
+      console.log("Fetching product with ID:", id);
       const { data, error } = await supabase
         .from("products")
-        .select("*, producers(business_name)")
+        .select(`
+          *,
+          producers (
+            business_name
+          )
+        `)
         .eq("id", id)
         .single();
 
-      if (error) throw error;
-      setProduct(data);
+      if (error) {
+         console.error("Supabase Error:", error);
+         throw error;
+      }
+      
+      console.log("Product data fetched:", data);
+      
+      // Force type casting if needed or map manually
+      const productWithProducer = {
+         ...data,
+         // Handle if producers is an array (unlikely with single relationship but possible in query)
+         // or object
+         producers: Array.isArray(data.producers) ? data.producers[0] : data.producers
+      };
+      
+      setProduct(productWithProducer as any);
     } catch (error) {
       console.error("Error fetching product:", error);
     } finally {
