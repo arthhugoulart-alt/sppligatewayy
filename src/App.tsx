@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Producers from "./pages/Producers";
 import Payments from "./pages/Payments";
+import Products from "./pages/Products";
 import Webhooks from "./pages/Webhooks";
 import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
@@ -47,6 +48,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Payments />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/products"
+              element={
+                <ProtectedRoute>
+                  <Products />
                 </ProtectedRoute>
               }
             />
