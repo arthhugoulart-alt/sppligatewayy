@@ -72,12 +72,13 @@ Deno.serve(async (req) => {
             application_fee: applicationFee,
             external_reference: `prod_${producerId}_${Date.now()}`,
             notification_url: `${Deno.env.get('SUPABASE_FUNCTIONS_URL') || 'https://ekbuszijautzwrsxnhmg.supabase.co/functions/v1'}/mp-webhook`,
-            description: paymentData.title,
+            description: `Via App - ${paymentData.title}`,
+            statement_descriptor: "APP COMPRA",
             additional_info: {
                 items: [
                     {
                         id: 'item-test-01',
-                        title: paymentData.title,
+                        title: `Via App - ${paymentData.title}`,
                         description: paymentData.title,
                         quantity: 1,
                         unit_price: amount
