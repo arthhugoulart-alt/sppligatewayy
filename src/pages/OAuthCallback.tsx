@@ -52,7 +52,7 @@ export default function OAuthCallback() {
       toast({
         variant: "destructive",
         title: "Falha na conexão",
-        description: "Não foi possível conectar a conta. Tente novamente.",
+        description: error instanceof Error ? error.message : "Não foi possível conectar a conta. Tente novamente.",
       });
       navigate("/producers");
     }

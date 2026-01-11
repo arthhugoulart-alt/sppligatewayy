@@ -25,21 +25,23 @@ serve(async (req) => {
 
     // 1. Exchange code for token
     const tokenUrl = 'https://api.mercadopago.com/oauth/token'
+    
+    // Configurações do App (Plataforma)
+    const clientSecret = Deno.env.get('MP_CLIENT_SECRET');
+    const clientId = Deno.env.get('MP_APP_ID');
+
+    if (!clientSecret || !clientId) {
+      console.error('Missing MP_CLIENT_SECRET or MP_APP_ID');
+      throw new Error('Configuração da Edge Function incompleta (Missing Secrets).');
+    }
+
     const body = new URLSearchParams({
-      client_secret: Deno.env.get('MP_ACCESS_TOKEN') ?? '', // Usamos o access token da plataforma como secret em alguns fluxos ou o client_secret se for app
-      client_id: Deno.env.get('MP_APP_ID') ?? '',
+      client_secret: clientSecret,
+      client_id: clientId,
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri,
     })
-
-    // NOTE: Check if MP_CLIENT_SECRET is needed instead of ACCESS_TOKEN depending on app type
-    // Usually for Marketplace: client_id + client_secret
-    const secret = Deno.env.get('MP_CLIENT_SECRET')
-
-    if (secret) {
-        body.set('client_secret', secret)
-    }
 
     const response = await fetch(tokenUrl, {
       method: 'POST',
