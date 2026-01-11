@@ -20,7 +20,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface Product {
   id: string;
-  title: string;
+  name: string;
   price: number;
   description: string | null;
   created_at: string;
@@ -31,7 +31,7 @@ export default function Products() {
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [newProduct, setNewProduct] = useState({ title: "", price: "", description: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", description: "" });
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -88,7 +88,7 @@ export default function Products() {
   };
 
   const handleCreateProduct = async () => {
-    if (!newProduct.title || !newProduct.price) {
+    if (!newProduct.name || !newProduct.price) {
       toast({
         variant: "destructive",
         title: "Campos obrigatórios",
@@ -109,7 +109,7 @@ export default function Products() {
 
       const { error } = await supabase.from("products").insert({
         producer_id: producer.id,
-        title: newProduct.title,
+        name: newProduct.name,
         price: parseFloat(newProduct.price),
         description: newProduct.description,
       });
@@ -122,7 +122,7 @@ export default function Products() {
       });
       
       setIsCreateOpen(false);
-      setNewProduct({ title: "", price: "", description: "" });
+      setNewProduct({ name: "", price: "", description: "" });
       fetchProducts();
 
     } catch (error: any) {
@@ -178,8 +178,8 @@ export default function Products() {
                 <div className="space-y-2">
                   <Label>Nome do Produto</Label>
                   <Input 
-                    value={newProduct.title}
-                    onChange={(e) => setNewProduct({...newProduct, title: e.target.value})}
+                    value={newProduct.name}
+                    onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
                     placeholder="Ex: Consultoria Premium"
                   />
                 </div>

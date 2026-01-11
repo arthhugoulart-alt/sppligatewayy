@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Product {
   id: string;
-  title: string;
+  name: string;
   description: string;
   price: number;
   producer_id: string;
@@ -62,7 +62,7 @@ export default function Checkout() {
         body: JSON.stringify({
           producerId: product.producer_id,
           paymentData: {
-            title: product.title,
+            title: product.name,
             price: product.price,
             successUrl: window.location.origin + "/dashboard", // Ideally a generic success page
             failureUrl: window.location.origin + "/dashboard",
