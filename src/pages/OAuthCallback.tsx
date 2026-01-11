@@ -40,6 +40,7 @@ export default function OAuthCallback() {
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       toast({
         title: "Conexão realizada com sucesso!",
