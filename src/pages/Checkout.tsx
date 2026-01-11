@@ -34,6 +34,7 @@ export default function Checkout() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [pixData, setPixData] = useState<{ qr_code: string, qr_code_base64: string } | null>(null);
+  const [paymentDebugData, setPaymentDebugData] = useState<any | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -102,6 +103,8 @@ export default function Checkout() {
       });
 
       const result = await response.json();
+      console.log("Payment Result:", result);
+      setPaymentDebugData(result);
 
       if (!response.ok) {
         throw new Error(result.error || `Erro: ${response.status}`);
@@ -237,6 +240,51 @@ export default function Checkout() {
             </div>
           </div>
           
+          {/* Debug Info for Fees */}
+          {paymentDebugData && paymentDebugData.fee_details && (
+            <div className="mt-6 border-t pt-4">
+               <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full text-xs text-gray-500">
+                      Ver Detalhes das Taxas (Debug)
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Detalhamento Financeiro</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between font-bold border-b pb-2">
+                        <span>Valor Total:</span>
+                        <span>R$ {paymentDebugData.transaction_amount?.toFixed(2)}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-semibold text-gray-600">Taxas Deduzidas:</p>
+                        {paymentDebugData.fee_details.map((fee: any, idx: number) => (
+                          <div key={idx} className="flex justify-between pl-2 text-gray-600">
+                            <span>
+                              {fee.type === 'mercadopago_fee' ? 'Taxa Mercado Pago' : 
+                               fee.type === 'application_fee' ? 'Taxa da Plataforma (10%)' : fee.type}
+                               ({fee.fee_payer === 'collector' ? 'Pago pelo Vendedor' : 'Outro'})
+                            :</span>
+                            <span className="text-red-500">- R$ {fee.amount?.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between font-bold border-t pt-2 mt-2 text-green-600">
+                        <span>Líquido Recebido (Vendedor):</span>
+                        <span>R$ {paymentDebugData.transaction_details?.net_received_amount?.toFixed(2)}</span>
+                      </div>
+                      
+                      <div className="bg-gray-100 p-2 rounded mt-4 text-xs overflow-auto max-h-40">
+                         <pre>{JSON.stringify(paymentDebugData.fee_details, null, 2)}</pre>
+                      </div>
+                    </div>
+                  </DialogContent>
+               </Dialog>
+            </div>
+          )}
+
           {pixData ? (
             <div className="flex flex-col items-center justify-center space-y-4 py-4 animate-in fade-in zoom-in duration-300">
               <div className="text-center space-y-2">
