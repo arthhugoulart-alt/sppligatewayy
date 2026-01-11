@@ -24,6 +24,9 @@ interface Product {
   description: string;
   price: number;
   producer_id: string;
+  producers?: {
+    business_name: string;
+  };
 }
 
 export default function Checkout() {
@@ -42,7 +45,7 @@ export default function Checkout() {
     try {
       const { data, error } = await supabase
         .from("products")
-        .select("*")
+        .select("*, producers(business_name)")
         .eq("id", id)
         .single();
 
@@ -94,8 +97,8 @@ export default function Checkout() {
           variant = "default";
         } else if (result.status === 'rejected') {
           if (result.status_detail === 'rejected_by_biz_rule') {
-             title = "Pagamento Recusado (Regra de Negócio)";
-             description = "Não é possível pagar a si mesmo. Use uma conta/e-mail diferente para testar.";
+             title = "Pagamento Recusado (Auto-pagamento)";
+             description = `Você está tentando pagar para ${product.producers?.business_name || 'o vendedor'}? O Mercado Pago não permite que o dono da conta pague a si mesmo.`;
           } else if (result.status_detail === 'cc_rejected_other_reason') {
              title = "Pagamento Recusado";
              description = "O pagamento foi recusado pelo banco ou operadora.";
@@ -182,6 +185,11 @@ export default function Checkout() {
               R$ {product.price.toFixed(2)}
             </div>
           </div>
+          {product.producers?.business_name && (
+            <div className="mt-2 text-sm text-gray-500">
+              Vendido por: <span className="font-medium text-gray-900">{product.producers.business_name}</span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="bg-white p-4 rounded-md border border-gray-100 mb-4">
