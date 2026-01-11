@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ export default function Products() {
   const [newProduct, setNewProduct] = useState({ name: "", price: "", description: "", producer_id: "" });
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
@@ -105,11 +107,17 @@ export default function Products() {
   };
 
   const handleCreateProduct = async () => {
-    if (!newProduct.name || !newProduct.price || !newProduct.producer_id) {
+    // Auto-select producer if only one exists
+    let selectedProducerId = newProduct.producer_id;
+    if (!selectedProducerId && producers.length === 1) {
+      selectedProducerId = producers[0].id;
+    }
+
+    if (!newProduct.name || !newProduct.price || !selectedProducerId) {
       toast({
         variant: "destructive",
         title: "Campos obrigatórios",
-        description: "Preencha nome, preço e selecione um recebedor.",
+        description: "Preencha nome, preço e certifique-se de ter uma conta de recebimento configurada.",
       });
       return;
     }
@@ -117,7 +125,7 @@ export default function Products() {
     setIsCreating(true);
     try {
       const { error } = await supabase.from("products").insert({
-        producer_id: newProduct.producer_id,
+        producer_id: selectedProducerId,
         name: newProduct.name,
         price: parseFloat(newProduct.price),
         description: newProduct.description,
@@ -169,41 +177,49 @@ export default function Products() {
               Gerencie seus produtos e gere links de pagamento.
             </p>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Produto
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Criar Novo Produto</DialogTitle>
-                <DialogDescription>
-                  Defina os detalhes do produto para começar a vender.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Recebedor</Label>
-                  <Select
-                    value={newProduct.producer_id}
-                    onValueChange={(value) => setNewProduct({...newProduct, producer_id: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione um recebedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {producers.map((producer) => (
-                        <SelectItem key={producer.id} value={producer.id}>
-                          {producer.business_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Nome do Produto</Label>
+          
+          {producers.length === 0 && !loading ? (
+            <Button onClick={() => navigate("/producers")}>
+              Configurar Conta para Vender
+            </Button>
+          ) : (
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Produto
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Criar Novo Produto</DialogTitle>
+                  <DialogDescription>
+                    Defina os detalhes do produto para começar a vender.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  {producers.length > 1 && (
+                    <div className="space-y-2">
+                      <Label>Recebedor</Label>
+                      <Select
+                        value={newProduct.producer_id}
+                        onValueChange={(value) => setNewProduct({...newProduct, producer_id: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione um recebedor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {producers.map((producer) => (
+                            <SelectItem key={producer.id} value={producer.id}>
+                              {producer.business_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label>Nome do Produto</Label>
                   <Input 
                     value={newProduct.name}
                     onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
@@ -253,7 +269,11 @@ export default function Products() {
               <p className="text-sm text-muted-foreground max-w-sm mt-2 mb-4">
                 Você ainda não criou nenhum produto. Comece agora para gerar seus links de pagamento.
               </p>
-              <Button onClick={() => setIsCreateOpen(true)}>Criar Primeiro Produto</Button>
+              {producers.length === 0 ? (
+                <Button onClick={() => navigate("/producers")}>Configurar Conta para Vender</Button>
+              ) : (
+                <Button onClick={() => setIsCreateOpen(true)}>Criar Primeiro Produto</Button>
+              )}
             </CardContent>
           </Card>
         ) : (

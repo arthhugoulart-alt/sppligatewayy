@@ -93,18 +93,25 @@ export default function Producers() {
 
   const fetchProducers = async () => {
     try {
+      // Fetch only the producer account associated with the current user
       const { data, error } = await supabase
         .from("producers")
         .select("*")
+        .eq("user_id", user?.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       setProducers(data || []);
+      
+      // If user has no producer account, open the creation dialog automatically
+      if (!data || data.length === 0) {
+        setIsDialogOpen(true);
+      }
     } catch (error) {
       console.error("Error fetching producers:", error);
       toast({
         variant: "destructive",
-        title: "Erro ao carregar recebedores",
+        title: "Erro ao carregar conta",
         description: "Tente novamente mais tarde.",
       });
     } finally {
@@ -125,15 +132,16 @@ export default function Producers() {
             email: formData.email,
             document_type: formData.document_type,
             document_number: formData.document_number,
-            platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
+            // Security: Prevent user from changing the fee
+            // platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
           })
           .eq("id", editingId);
 
         if (error) throw error;
 
         toast({
-          title: "Recebedor atualizado!",
-          description: "Os dados foram salvos com sucesso.",
+          title: "Conta atualizada!",
+          description: "Seus dados foram salvos com sucesso.",
         });
       } else {
         // Create new producer
@@ -143,15 +151,16 @@ export default function Producers() {
           email: formData.email,
           document_type: formData.document_type,
           document_number: formData.document_number,
-          platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
+          // Force Default Fee (10% for Production, 0% for testing if needed)
+          platform_fee_percentage: 10.00,
           status: "pending",
         });
 
         if (error) throw error;
 
         toast({
-          title: "Recebedor criado!",
-          description: "O recebedor foi adicionado com sucesso.",
+          title: "Conta criada!",
+          description: "Agora conecte seu Mercado Pago para receber.",
         });
       }
 
@@ -160,7 +169,7 @@ export default function Producers() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: `Erro ao ${editingId ? "atualizar" : "criar"} recebedor`,
+        title: `Erro ao ${editingId ? "atualizar" : "criar"} conta`,
         description: error.message,
       });
     }
@@ -262,36 +271,39 @@ export default function Producers() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
             <p className="text-muted-foreground">
-              Gerencie quem recebe os pagamentos e conecte contas bancárias
+              Configure sua conta para receber pagamentos e gerencie suas taxas
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            if (!open) closeDialog();
-            else setIsDialogOpen(true);
+            // Prevent closing if no producer exists
+            if (!open && producers.length > 0) closeDialog();
+            else if (open) setIsDialogOpen(true);
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-primary hover:opacity-90" onClick={() => {
-                setEditingId(null);
-                setFormData({
-                  business_name: "",
-                  email: "",
-                  document_type: "CPF",
-                  document_number: "",
-                  platform_fee_percentage: "10.00",
-                });
-              }}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Recebedor
-              </Button>
+              {producers.length === 0 && (
+                <Button className="bg-gradient-primary hover:opacity-90" onClick={() => {
+                  setEditingId(null);
+                  setFormData({
+                    business_name: "",
+                    email: "",
+                    document_type: "CPF",
+                    document_number: "",
+                    platform_fee_percentage: "10.00",
+                  });
+                }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Ativar Recebimentos
+                </Button>
+              )}
             </DialogTrigger>
             <DialogContent>
               <form onSubmit={handleSaveProducer}>
                 <DialogHeader>
-                  <DialogTitle>{editingId ? "Editar Recebedor" : "Adicionar Novo Recebedor"}</DialogTitle>
+                  <DialogTitle>{editingId ? "Editar Meus Dados" : "Ativar Recebimentos"}</DialogTitle>
                   <DialogDescription>
                     {editingId 
-                      ? "Atualize os dados do recebedor abaixo." 
-                      : "Preencha os dados de quem receberá parte dos pagamentos."}
+                      ? "Atualize seus dados comerciais abaixo." 
+                      : "Preencha seus dados para começar a vender."}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -350,7 +362,7 @@ export default function Producers() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 hidden">
                     <Label htmlFor="fee">Taxa da Plataforma (%)</Label>
                     <Input
                       id="fee"
@@ -359,13 +371,11 @@ export default function Producers() {
                       min="0"
                       max="100"
                       value={formData.platform_fee_percentage}
-                      onChange={(e) =>
-                        setFormData({ ...formData, platform_fee_percentage: e.target.value })
-                      }
-                      placeholder="Ex: 10.00"
+                      disabled
+                      className="bg-muted text-muted-foreground cursor-not-allowed"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Defina a porcentagem que será descontada de cada venda.
+                      Taxa fixa da plataforma (10%).
                     </p>
                   </div>
                 </div>
@@ -385,56 +395,43 @@ export default function Producers() {
         <Alert className="bg-muted/50 border-primary/20">
           <AlertTitle className="font-semibold flex items-center gap-2 text-primary">
             <CheckCircle className="h-4 w-4" />
-            Como funciona o Split de Pagamentos
+            Configuração da Conta
           </AlertTitle>
           <AlertDescription className="mt-3">
-            <p className="mb-2 font-medium">Siga os passos abaixo para configurar os recebimentos:</p>
+            <p className="mb-2 font-medium">Para começar a vender:</p>
             <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-1">
-              <li>Cadastre uma nova conta clicando em <strong className="text-foreground">Novo Recebedor</strong>.</li>
-              <li>Após criar, clique no botão <strong className="text-foreground">Conectar Conta</strong> para vincular ao Mercado Pago.</li>
-              <li>As vendas serão divididas automaticamente conforme as taxas configuradas.</li>
+              <li>Preencha seus dados comerciais no formulário.</li>
+              <li>Conecte sua conta do Mercado Pago para receber os pagamentos.</li>
+              <li>A plataforma cobrará automaticamente uma taxa de 10% sobre as vendas.</li>
             </ol>
           </AlertDescription>
         </Alert>
 
-        {/* Search */}
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar produtores..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Button variant="outline" size="icon" onClick={fetchProducers}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* Search - Hidden since it's personal profile */}
+        {/* <div className="flex items-center gap-4"> ... </div> */}
 
         {/* Table */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Lista de Recebedores
+              Status da Conta
             </CardTitle>
             <CardDescription>
-              {filteredProducers.length} conta(s) cadastrada(s)
+              Seus dados de recebimento
             </CardDescription>
           </CardHeader>
           <CardContent>
             {filteredProducers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Users className="h-12 w-12 text-muted-foreground/40 mb-4" />
-                <p className="text-muted-foreground">Nenhum recebedor cadastrado</p>
+                <p className="text-muted-foreground">Conta não configurada</p>
                 <p className="text-sm text-muted-foreground/70 mb-4">
-                  Adicione contas para começar a processar pagamentos
+                  Complete seu cadastro para começar a vender
                 </p>
                 <Button onClick={() => setIsDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Adicionar Primeiro Recebedor
+                  Ativar Agora
                 </Button>
               </div>
             ) : (
