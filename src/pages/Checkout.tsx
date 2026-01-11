@@ -4,8 +4,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, ShoppingCart, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
+
+// Initialize Mercado Pago with Platform Public Key
+// IMPORTANT: Add VITE_MP_PUBLIC_KEY to your .env file
+const MP_PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY;
+
+if (MP_PUBLIC_KEY) {
+  initMercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
+} else {
+  console.warn("VITE_MP_PUBLIC_KEY is missing in .env");
+}
 
 interface Product {
   id: string;
@@ -19,7 +30,6 @@ export default function Checkout() {
   const { productId } = useParams();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -45,41 +55,41 @@ export default function Checkout() {
     }
   };
 
-  const handleBuy = async () => {
+  const handlePayment = async (paymentData: any) => {
     if (!product) return;
 
-    setIsProcessing(true);
     try {
-      // Direct Fetch to Edge Function (Public)
       const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`;
       
       const response = await fetch(functionUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
-          // No Authorization header needed as we disabled JWT enforcement
         },
         body: JSON.stringify({
           producerId: product.producer_id,
           paymentData: {
             title: product.name,
             price: product.price,
-            successUrl: window.location.origin + "/dashboard", // Ideally a generic success page
-            failureUrl: window.location.origin + "/dashboard",
+            formData: paymentData // Send Brick data to backend
           },
         }),
       });
 
-      const data = await response.json();
+      const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || `Erro Edge Function: ${response.status}`);
+        throw new Error(result.error || `Erro: ${response.status}`);
       }
 
-      if (data.init_point) {
-        window.location.href = data.init_point;
-      } else {
-        throw new Error("Link de pagamento não gerado.");
+      toast({
+        title: "Pagamento processado!",
+        description: `Status: ${result.status}`,
+      });
+
+      // Redirect based on status if needed, or show success message
+      if (result.status === 'approved') {
+         // Maybe redirect to success page
       }
 
     } catch (error: any) {
@@ -89,8 +99,6 @@ export default function Checkout() {
         title: "Erro no pagamento",
         description: error.message,
       });
-    } finally {
-      setIsProcessing(false);
     }
   };
 
@@ -116,6 +124,20 @@ export default function Checkout() {
     );
   }
 
+  if (!MP_PUBLIC_KEY) {
+     return (
+       <div className="flex h-screen items-center justify-center p-4">
+         <Alert variant="destructive" className="max-w-md">
+           <AlertCircle className="h-4 w-4" />
+           <AlertTitle>Configuração Pendente</AlertTitle>
+           <AlertDescription>
+             A chave pública do Mercado Pago (VITE_MP_PUBLIC_KEY) não foi configurada no arquivo .env.
+           </AlertDescription>
+         </Alert>
+       </div>
+     );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg">
@@ -138,26 +160,28 @@ export default function Checkout() {
               <span>R$ {product.price.toFixed(2)}</span>
             </div>
           </div>
+
+          <Payment
+            initialization={{
+              amount: product.price,
+            }}
+            customization={{
+              paymentMethods: {
+                ticket: "all",
+                bankTransfer: "all",
+                creditCard: "all",
+                debitCard: "all",
+                mercadoPago: "all",
+              },
+            }}
+            onSubmit={async (param) => {
+              console.log("Payment Brick data:", param);
+              await handlePayment(param.formData);
+            }}
+            onReady={() => console.log("Payment Brick ready")}
+            onError={(error) => console.error("Payment Brick error:", error)}
+          />
         </CardContent>
-        <CardFooter>
-          <Button 
-            className="w-full text-lg h-12" 
-            onClick={handleBuy}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Processando...
-              </>
-            ) : (
-              <>
-                <ShoppingCart className="mr-2 h-5 w-5" />
-                Pagar com Mercado Pago
-              </>
-            )}
-          </Button>
-        </CardFooter>
       </Card>
     </div>
   );

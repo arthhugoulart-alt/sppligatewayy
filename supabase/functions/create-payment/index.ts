@@ -51,7 +51,54 @@ Deno.serve(async (req) => {
 
     console.log(`Amount: ${amount}, Fee: ${applicationFee}, Token: ${accessToken.substring(0, 10)}...`);
 
-    // 3. Create Preference Body
+    // CHECK IF THIS IS A TRANSPARENT CHECKOUT (PAYMENT BRICK)
+    if (paymentData.formData) {
+        console.log("Processing Transparent Checkout (Payment Brick)...");
+
+        const paymentBody = {
+            ...paymentData.formData,
+            application_fee: applicationFee,
+            external_reference: `prod_${producerId}_${Date.now()}`,
+            notification_url: `${Deno.env.get('SUPABASE_FUNCTIONS_URL') || 'https://ekbuszijautzwrsxnhmg.supabase.co/functions/v1'}/mp-webhook`,
+            description: paymentData.title,
+            additional_info: {
+                items: [
+                    {
+                        id: 'item-test-01',
+                        title: paymentData.title,
+                        description: paymentData.title,
+                        quantity: 1,
+                        unit_price: amount
+                    }
+                ]
+            }
+        };
+
+        // Call /v1/payments
+        const response = await fetch('https://api.mercadopago.com/v1/payments', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Idempotency-Key': crypto.randomUUID(),
+                'Authorization': `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(paymentBody)
+        });
+
+        const paymentResult = await response.json();
+
+        if (!response.ok) {
+            console.error('MP Payment Error:', paymentResult);
+            throw new Error(`Erro Pagamento: ${paymentResult.message || JSON.stringify(paymentResult)}`);
+        }
+
+        return new Response(
+            JSON.stringify(paymentResult),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+
+    // 3. Create Preference Body (Fallback / Legacy)
     // Fallback URL hardcoded for this project based on .env
     const functionsUrl = Deno.env.get('SUPABASE_FUNCTIONS_URL') || 'https://ekbuszijautzwrsxnhmg.supabase.co/functions/v1';
     
