@@ -115,6 +115,13 @@ export default function Checkout() {
           title = "Pagamento Aprovado!";
           description = "Sua compra foi realizada com sucesso.";
           variant = "default";
+        } else if (result.status === 'in_process' || result.status === 'pending') {
+          title = "Pagamento Pendente";
+          description = "Estamos aguardando a confirmação do pagamento. Isso pode levar alguns minutos.";
+          if (result.status_detail === 'pending_waiting_transfer') {
+             description = "Pagamento iniciado! Aguardando a transferência bancária para concluir.";
+          }
+          variant = "default";
         } else if (result.status === 'rejected') {
           if (result.status_detail === 'rejected_by_biz_rule') {
              title = "Pagamento Recusado (Auto-pagamento)";
