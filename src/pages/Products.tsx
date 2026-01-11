@@ -252,7 +252,8 @@ export default function Products() {
                 </Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          )}
         </div>
 
         {loading ? (
