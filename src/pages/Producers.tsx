@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,10 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  Trash2,
+  FileText,
+  Edit,
+  CreditCard,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -70,6 +75,7 @@ export default function Producers() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     business_name: "",
     email: "",
@@ -79,6 +85,7 @@ export default function Producers() {
   });
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchProducers();
@@ -105,43 +112,109 @@ export default function Producers() {
     }
   };
 
-  const handleCreateProducer = async (e: React.FormEvent) => {
+  const handleSaveProducer = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      const { error } = await supabase.from("producers").insert({
-        user_id: user?.id,
-        business_name: formData.business_name,
-        email: formData.email,
-        document_type: formData.document_type,
-        document_number: formData.document_number,
-        platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
-        status: "pending",
+      if (editingId) {
+        // Update existing producer
+        const { error } = await supabase
+          .from("producers")
+          .update({
+            business_name: formData.business_name,
+            email: formData.email,
+            document_type: formData.document_type,
+            document_number: formData.document_number,
+            // platform_fee_percentage is disabled in UI but we keep it here just in case
+          })
+          .eq("id", editingId);
+
+        if (error) throw error;
+
+        toast({
+          title: "Recebedor atualizado!",
+          description: "Os dados foram salvos com sucesso.",
+        });
+      } else {
+        // Create new producer
+        const { error } = await supabase.from("producers").insert({
+          user_id: user?.id,
+          business_name: formData.business_name,
+          email: formData.email,
+          document_type: formData.document_type,
+          document_number: formData.document_number,
+          platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
+          status: "pending",
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Recebedor criado!",
+          description: "O recebedor foi adicionado com sucesso.",
+        });
+      }
+
+      closeDialog();
+      fetchProducers();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: `Erro ao ${editingId ? "atualizar" : "criar"} recebedor`,
+        description: error.message,
       });
+    }
+  };
+
+  const handleEdit = (producer: Producer) => {
+    setEditingId(producer.id);
+    setFormData({
+      business_name: producer.business_name,
+      email: producer.email,
+      document_type: producer.document_type || "CPF",
+      document_number: producer.document_number || "",
+      platform_fee_percentage: producer.platform_fee_percentage.toString(),
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir este recebedor? Esta ação não pode ser desfeita.")) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("producers")
+        .delete()
+        .eq("id", id);
 
       if (error) throw error;
 
       toast({
-        title: "Recebedor criado!",
-        description: "O recebedor foi adicionado com sucesso.",
-      });
-
-      setIsDialogOpen(false);
-      setFormData({
-        business_name: "",
-        email: "",
-        document_type: "CPF",
-        document_number: "",
-        platform_fee_percentage: "10.00",
+        title: "Recebedor excluído",
+        description: "O recebedor foi removido com sucesso.",
       });
       fetchProducers();
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Erro ao criar produtor",
+        title: "Erro ao excluir",
         description: error.message,
       });
     }
+  };
+
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    setEditingId(null);
+    setFormData({
+      business_name: "",
+      email: "",
+      document_type: "CPF",
+      document_number: "",
+      platform_fee_percentage: "10.00",
+    });
   };
 
   const initiateOAuthConnect = (producerId: string) => {
@@ -192,19 +265,33 @@ export default function Producers() {
               Gerencie quem recebe os pagamentos e conecte contas bancárias
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            if (!open) closeDialog();
+            else setIsDialogOpen(true);
+          }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-primary hover:opacity-90">
+              <Button className="bg-gradient-primary hover:opacity-90" onClick={() => {
+                setEditingId(null);
+                setFormData({
+                  business_name: "",
+                  email: "",
+                  document_type: "CPF",
+                  document_number: "",
+                  platform_fee_percentage: "10.00",
+                });
+              }}>
                 <Plus className="mr-2 h-4 w-4" />
                 Novo Recebedor
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <form onSubmit={handleCreateProducer}>
+              <form onSubmit={handleSaveProducer}>
                 <DialogHeader>
-                  <DialogTitle>Adicionar Novo Recebedor</DialogTitle>
+                  <DialogTitle>{editingId ? "Editar Recebedor" : "Adicionar Novo Recebedor"}</DialogTitle>
                   <DialogDescription>
-                    Preencha os dados de quem receberá parte dos pagamentos.
+                    {editingId 
+                      ? "Atualize os dados do recebedor abaixo." 
+                      : "Preencha os dados de quem receberá parte dos pagamentos."}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -281,11 +368,11 @@ export default function Producers() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={closeDialog}>
                     Cancelar
                   </Button>
                   <Button type="submit" className="bg-gradient-primary hover:opacity-90">
-                    Adicionar
+                    {editingId ? "Salvar Alterações" : "Adicionar"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -423,12 +510,31 @@ export default function Producers() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem>Ver detalhes</DropdownMenuItem>
-                            <DropdownMenuItem>Editar</DropdownMenuItem>
-                            <DropdownMenuItem>Ver pagamentos</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEdit(producer)}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              Ver detalhes
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEdit(producer)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              navigate("/payments");
+                              toast({
+                                title: "Dica",
+                                description: `Você pode filtrar por "${producer.business_name}" na aba de pagamentos.`,
+                              });
+                            }}>
+                              <CreditCard className="mr-2 h-4 w-4" />
+                              Ver pagamentos
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive">
-                              Desativar
+                            <DropdownMenuItem 
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDelete(producer.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
