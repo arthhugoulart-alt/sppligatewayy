@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -96,7 +97,7 @@ export default function Producers() {
       console.error("Error fetching producers:", error);
       toast({
         variant: "destructive",
-        title: "Erro ao carregar produtores",
+        title: "Erro ao carregar recebedores",
         description: "Tente novamente mais tarde.",
       });
     } finally {
@@ -121,8 +122,8 @@ export default function Producers() {
       if (error) throw error;
 
       toast({
-        title: "Produtor criado!",
-        description: "O produtor foi adicionado com sucesso.",
+        title: "Recebedor criado!",
+        description: "O recebedor foi adicionado com sucesso.",
       });
 
       setIsDialogOpen(false);
@@ -186,24 +187,24 @@ export default function Producers() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Produtores</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
             <p className="text-muted-foreground">
-              Gerencie os produtores conectados à plataforma
+              Gerencie quem recebe os pagamentos e conecte contas bancárias
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-gradient-primary hover:opacity-90">
                 <Plus className="mr-2 h-4 w-4" />
-                Novo Produtor
+                Novo Recebedor
               </Button>
             </DialogTrigger>
             <DialogContent>
               <form onSubmit={handleCreateProducer}>
                 <DialogHeader>
-                  <DialogTitle>Adicionar Produtor</DialogTitle>
+                  <DialogTitle>Adicionar Novo Recebedor</DialogTitle>
                   <DialogDescription>
-                    Cadastre um novo produtor para receber pagamentos via split
+                    Preencha os dados de quem receberá parte dos pagamentos.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -292,6 +293,21 @@ export default function Producers() {
           </Dialog>
         </div>
 
+        <Alert className="bg-muted/50 border-primary/20">
+          <AlertTitle className="font-semibold flex items-center gap-2 text-primary">
+            <CheckCircle className="h-4 w-4" />
+            Como funciona o Split de Pagamentos
+          </AlertTitle>
+          <AlertDescription className="mt-3">
+            <p className="mb-2 font-medium">Siga os passos abaixo para configurar os recebimentos:</p>
+            <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-1">
+              <li>Cadastre uma nova conta clicando em <strong className="text-foreground">Novo Recebedor</strong>.</li>
+              <li>Após criar, clique no botão <strong className="text-foreground">Conectar Conta</strong> para vincular ao Mercado Pago.</li>
+              <li>As vendas serão divididas automaticamente conforme as taxas configuradas.</li>
+            </ol>
+          </AlertDescription>
+        </Alert>
+
         {/* Search */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-sm">
@@ -313,30 +329,30 @@ export default function Producers() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Lista de Produtores
+              Lista de Recebedores
             </CardTitle>
             <CardDescription>
-              {filteredProducers.length} produtor(es) cadastrado(s)
+              {filteredProducers.length} conta(s) cadastrada(s)
             </CardDescription>
           </CardHeader>
           <CardContent>
             {filteredProducers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Users className="h-12 w-12 text-muted-foreground/40 mb-4" />
-                <p className="text-muted-foreground">Nenhum produtor cadastrado</p>
+                <p className="text-muted-foreground">Nenhum recebedor cadastrado</p>
                 <p className="text-sm text-muted-foreground/70 mb-4">
-                  Adicione produtores para começar a processar pagamentos
+                  Adicione contas para começar a processar pagamentos
                 </p>
                 <Button onClick={() => setIsDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Adicionar Primeiro Produtor
+                  Adicionar Primeiro Recebedor
                 </Button>
               </div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Produtor</TableHead>
+                    <TableHead>Nome</TableHead>
                     <TableHead>Documento</TableHead>
                     <TableHead>Taxa</TableHead>
                     <TableHead>Status</TableHead>
