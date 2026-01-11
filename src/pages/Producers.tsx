@@ -125,7 +125,7 @@ export default function Producers() {
             email: formData.email,
             document_type: formData.document_type,
             document_number: formData.document_number,
-            // platform_fee_percentage is disabled in UI but we keep it here just in case
+            platform_fee_percentage: parseFloat(formData.platform_fee_percentage),
           })
           .eq("id", editingId);
 
@@ -359,11 +359,13 @@ export default function Producers() {
                       min="0"
                       max="100"
                       value={formData.platform_fee_percentage}
-                      disabled
-                      className="bg-muted text-muted-foreground cursor-not-allowed"
+                      onChange={(e) =>
+                        setFormData({ ...formData, platform_fee_percentage: e.target.value })
+                      }
+                      placeholder="Ex: 10.00"
                     />
                     <p className="text-xs text-muted-foreground">
-                      A taxa é definida automaticamente pela plataforma.
+                      Defina a porcentagem que será descontada de cada venda.
                     </p>
                   </div>
                 </div>
