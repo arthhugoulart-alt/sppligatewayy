@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Producers from "./pages/Producers";
 import Payments from "./pages/Payments";
 import Webhooks from "./pages/Webhooks";
+import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,6 +25,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/oauth/callback" element={<OAuthCallback />} />
             <Route
               path="/dashboard"
               element={
