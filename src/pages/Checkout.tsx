@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, Users } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 
@@ -225,11 +225,23 @@ export default function Checkout() {
               R$ {product.price.toFixed(2)}
             </div>
           </div>
-          {product.producers?.business_name && (
-            <div className="mt-2 text-sm text-gray-500">
-              Vendido por: <span className="font-medium text-gray-900">{product.producers.business_name}</span>
-            </div>
-          )}
+          
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-100 flex items-center gap-3">
+             <div className="bg-white p-2 rounded-full border border-gray-200">
+                <Users className="h-5 w-5 text-gray-600" />
+             </div>
+             <div>
+                <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider">Vendedor Responsável</p>
+                <p className="font-medium text-gray-900 text-sm">
+                   {product.producers?.business_name || "Vendedor Parceiro"}
+                </p>
+             </div>
+          </div>
+
+          <div className="mt-2 flex items-center gap-1 text-xs text-gray-400 justify-center">
+             <AlertCircle className="h-3 w-3" />
+             <span>Pagamento processado de forma segura pelo Mercado Pago</span>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="bg-white p-4 rounded-md border border-gray-100 mb-4">
