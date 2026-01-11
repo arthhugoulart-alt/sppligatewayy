@@ -52,6 +52,9 @@ Deno.serve(async (req) => {
     console.log(`Amount: ${amount}, Fee: ${applicationFee}, Token: ${accessToken.substring(0, 10)}...`);
 
     // 3. Create Preference Body
+    // Fallback URL hardcoded for this project based on .env
+    const functionsUrl = Deno.env.get('SUPABASE_FUNCTIONS_URL') || 'https://ekbuszijautzwrsxnhmg.supabase.co/functions/v1';
+    
     const preferenceBody = {
       items: [
         {
@@ -63,7 +66,7 @@ Deno.serve(async (req) => {
         }
       ],
       application_fee: applicationFee,
-      notification_url: `${Deno.env.get('SUPABASE_FUNCTIONS_URL') || 'https://sppligatewayy.vercel.app/api'}/mp-webhook`, // Fallback or proper URL
+      notification_url: `${functionsUrl}/mp-webhook`,
       external_reference: `prod_${producerId}_${Date.now()}`,
       back_urls: {
         success: paymentData.successUrl || 'https://sppligatewayy.vercel.app/success',
@@ -71,6 +74,12 @@ Deno.serve(async (req) => {
         pending: 'https://sppligatewayy.vercel.app/pending'
       },
       auto_return: "approved",
+      payment_methods: {
+        excluded_payment_methods: [],
+        excluded_payment_types: [],
+        installments: 12
+      },
+      statement_descriptor: "SPLITPAY PRODUTO",
     }
 
     // 4. Call Mercado Pago API
