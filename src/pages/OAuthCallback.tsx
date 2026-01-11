@@ -34,15 +34,31 @@ export default function OAuthCallback() {
       const decodedState = JSON.parse(atob(state));
       const { producerId } = decodedState;
 
-      // Call Edge Function to exchange code for token
-      const { data, error } = await supabase.functions.invoke("connect-account", {
-        body: { code, producerId, redirectUri: `${window.location.origin}/oauth/callback` },
+      // Tentar fetch direto para debugar se é problema da lib do Supabase
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connect-account`;
+      console.log("Chamando URL direta:", functionUrl);
+
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ 
+          code, 
+          producerId, 
+          redirectUri: `${window.location.origin}/oauth/callback` 
+        }),
       });
 
-      console.log("Edge Function Response:", data);
-      console.log("Edge Function Error:", error);
+      const data = await response.json();
+      
+      console.log("Resposta direta:", data);
 
-      if (error) throw error;
+      if (!response.ok) {
+        throw new Error(data.error || "Erro na requisição fetch direta");
+      }
+
       if (data?.error) throw new Error(data.error);
 
       toast({
