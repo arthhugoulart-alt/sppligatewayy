@@ -61,8 +61,23 @@ export default function Products() {
 
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("create-payment", {
-        body: {
+      // 1. Get Session Token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) throw new Error("Usuário não autenticado");
+
+      // 2. Direct Fetch to Edge Function
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`;
+      console.log("Chamando Edge Function:", functionUrl);
+
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
           producerId: selectedProducer,
           paymentData: {
             title: productName,
@@ -70,17 +85,23 @@ export default function Products() {
             successUrl: window.location.origin + "/dashboard",
             failureUrl: window.location.origin + "/dashboard",
           },
-        },
+        }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
+      console.log("Resposta Edge Function:", data);
+
+      if (!response.ok) {
+        throw new Error(data.error || `Erro Edge Function: ${response.status} ${response.statusText}`);
+      }
+
       if (data.error) throw new Error(data.error);
 
       // Redirect to Mercado Pago Checkout
       if (data.init_point) {
         window.location.href = data.init_point;
       } else {
-        throw new Error("Link de pagamento não retornado.");
+        throw new Error("Link de pagamento (init_point) não retornado pelo Mercado Pago.");
       }
 
     } catch (error: any) {
@@ -88,7 +109,7 @@ export default function Products() {
       toast({
         variant: "destructive",
         title: "Erro ao criar pagamento",
-        description: error.message || "Tente novamente.",
+        description: error.message || "Verifique o console para mais detalhes.",
       });
     } finally {
       setIsProcessing(false);
