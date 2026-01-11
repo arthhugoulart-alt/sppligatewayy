@@ -84,10 +84,31 @@ export default function Checkout() {
       }
 
       if (result.status) {
+        let title = "Pagamento Processado";
+        let description = `Status: ${result.status_detail || result.status}`;
+        let variant: "default" | "destructive" = "destructive";
+
+        if (result.status === 'approved') {
+          title = "Pagamento Aprovado!";
+          description = "Sua compra foi realizada com sucesso.";
+          variant = "default";
+        } else if (result.status === 'rejected') {
+          if (result.status_detail === 'rejected_by_biz_rule') {
+             title = "Pagamento Recusado (Regra de Negócio)";
+             description = "Não é possível pagar a si mesmo. Use uma conta/e-mail diferente para testar.";
+          } else if (result.status_detail === 'cc_rejected_other_reason') {
+             title = "Pagamento Recusado";
+             description = "O pagamento foi recusado pelo banco ou operadora.";
+          } else {
+             title = "Pagamento Recusado";
+             description = `O pagamento não foi aprovado. Detalhe: ${result.status_detail}`;
+          }
+        }
+
         toast({
-          title: result.status === 'approved' ? "Pagamento Aprovado!" : "Pagamento Processado",
-          description: `Status: ${result.status_detail || result.status}`,
-          variant: result.status === 'approved' ? "default" : "destructive",
+          title,
+          description,
+          variant,
         });
       } else {
         console.warn("Unexpected response format:", result);
