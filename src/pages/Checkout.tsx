@@ -33,6 +33,7 @@ export default function Checkout() {
   const { productId } = useParams();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pixData, setPixData] = useState<{ qr_code: string, qr_code_base64: string } | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -120,6 +121,15 @@ export default function Checkout() {
           description = "Estamos aguardando a confirmação do pagamento. Isso pode levar alguns minutos.";
           if (result.status_detail === 'pending_waiting_transfer') {
              description = "Pagamento iniciado! Aguardando a transferência bancária para concluir.";
+             
+             // Check for Pix data
+             if (result.point_of_interaction?.transaction_data) {
+                const { qr_code, qr_code_base64 } = result.point_of_interaction.transaction_data;
+                if (qr_code && qr_code_base64) {
+                   setPixData({ qr_code, qr_code_base64 });
+                   description = "Escaneie o QR Code abaixo para finalizar o pagamento.";
+                }
+             }
           }
           variant = "default";
         } else if (result.status === 'rejected') {
@@ -226,7 +236,59 @@ export default function Checkout() {
               <span>R$ {product.price.toFixed(2)}</span>
             </div>
           </div>
+          
+          {pixData ? (
+            <div className="flex flex-col items-center justify-center space-y-4 py-4 animate-in fade-in zoom-in duration-300">
+              <div className="text-center space-y-2">
+                <h3 className="font-semibold text-lg text-green-600">Pague com Pix</h3>
+                <p className="text-sm text-gray-500">Escaneie o QR Code ou copie o código abaixo</p>
+              </div>
+              
+              {/* QR Code Image */}
+              <div className="border-2 border-dashed border-gray-200 p-2 rounded-lg bg-white">
+                <img 
+                  src={`data:image/png;base64,${pixData.qr_code_base64}`} 
+                  alt="QR Code Pix" 
+                  className="w-48 h-48 object-contain"
+                />
+              </div>
 
+              {/* Copy Paste Code */}
+              <div className="w-full space-y-2">
+                <p className="text-xs text-gray-500 font-medium text-center uppercase tracking-wider">Pix Copia e Cola</p>
+                <div className="flex gap-2">
+                  <input 
+                    readOnly 
+                    value={pixData.qr_code} 
+                    className="flex-1 text-xs border rounded px-3 py-2 bg-gray-50 font-mono text-gray-600 truncate focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(pixData.qr_code);
+                      toast({ title: "Código copiado!", description: "Cole no seu app do banco para pagar." });
+                    }}
+                  >
+                    Copiar
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="text-xs text-center text-gray-400 mt-4 max-w-xs">
+                Após o pagamento, você receberá a confirmação por e-mail.
+              </div>
+
+              <Button 
+                  className="w-full mt-4" 
+                  variant="ghost"
+                  onClick={() => window.location.reload()}
+              >
+                  Voltar / Novo Pagamento
+              </Button>
+            </div>
+          ) : (
           <Payment
             initialization={{
               amount: product.price,
@@ -249,6 +311,7 @@ export default function Checkout() {
             onReady={() => console.log("Payment Brick ready")}
             onError={(error) => console.error("Payment Brick error:", error)}
           />
+          )}
         </CardContent>
       </Card>
     </div>
