@@ -52,8 +52,13 @@ Deno.serve(async (req) => {
     console.log(`Amount: ${amount}, Fee: ${applicationFee}, Token: ${accessToken.substring(0, 10)}...`);
 
     // CHECK IF THIS IS A TRANSPARENT CHECKOUT (PAYMENT BRICK)
-    if (paymentData.formData) {
+    // Check for 'brick' type explicit flag OR presence of formData
+    if (paymentData.type === 'brick' || paymentData.formData) {
         console.log("Processing Transparent Checkout (Payment Brick)...");
+
+        if (!paymentData.formData) {
+           throw new Error("Dados do pagamento (formData) não fornecidos para checkout transparente.");
+        }
 
         const paymentBody = {
             ...paymentData.formData,

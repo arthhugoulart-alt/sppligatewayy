@@ -71,7 +71,8 @@ export default function Checkout() {
           paymentData: {
             title: product.name,
             price: product.price,
-            formData: paymentData // Send Brick data to backend
+            formData: paymentData, // Send Brick data to backend
+            type: 'brick' // Explicitly indicate this is a Brick payment
           },
         }),
       });
@@ -82,10 +83,19 @@ export default function Checkout() {
         throw new Error(result.error || `Erro: ${response.status}`);
       }
 
-      toast({
-        title: "Pagamento processado!",
-        description: `Status: ${result.status}`,
-      });
+      if (result.status) {
+        toast({
+          title: result.status === 'approved' ? "Pagamento Aprovado!" : "Pagamento Processado",
+          description: `Status: ${result.status_detail || result.status}`,
+          variant: result.status === 'approved' ? "default" : "destructive",
+        });
+      } else {
+        console.warn("Unexpected response format:", result);
+        toast({
+          title: "Atenção",
+          description: "O pagamento foi enviado, mas não recebemos o status de confirmação.",
+        });
+      }
 
       // Redirect based on status if needed, or show success message
       if (result.status === 'approved') {
@@ -176,7 +186,9 @@ export default function Checkout() {
             }}
             onSubmit={async (param) => {
               console.log("Payment Brick data:", param);
-              await handlePayment(param.formData);
+              // Ensure we extract the correct data structure
+              const paymentData = param.formData || param;
+              await handlePayment(paymentData);
             }}
             onReady={() => console.log("Payment Brick ready")}
             onError={(error) => console.error("Payment Brick error:", error)}
