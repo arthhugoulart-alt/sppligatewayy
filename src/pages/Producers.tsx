@@ -271,13 +271,12 @@ export default function Producers() {
                       min="0"
                       max="100"
                       value={formData.platform_fee_percentage}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          platform_fee_percentage: e.target.value,
-                        })
-                      }
+                      disabled
+                      className="bg-muted text-muted-foreground cursor-not-allowed"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      A taxa é definida automaticamente pela plataforma.
+                    </p>
                   </div>
                 </div>
                 <DialogFooter>
