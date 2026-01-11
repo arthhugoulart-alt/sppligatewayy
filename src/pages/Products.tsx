@@ -234,10 +234,15 @@ export default function Products() {
             {products.map((product) => (
               <Card key={product.id}>
                 <CardHeader>
-                  <CardTitle>{product.title}</CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {product.description || "Sem descrição"}
-                  </CardDescription>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle className="text-xl">{product.name}</CardTitle>
+                      <CardDescription>{product.description}</CardDescription>
+                    </div>
+                    <Button variant="ghost" size="icon">
+                      <ShoppingCart className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">

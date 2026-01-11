@@ -122,7 +122,7 @@ export default function Checkout() {
         <CardHeader>
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-2xl">{product.title}</CardTitle>
+              <CardTitle className="text-2xl">{product.name}</CardTitle>
               <CardDescription className="mt-2">{product.description || "Sem descrição"}</CardDescription>
             </div>
             <div className="bg-primary/10 text-primary px-3 py-1 rounded-full font-bold">
@@ -134,7 +134,7 @@ export default function Checkout() {
           <div className="bg-white p-4 rounded-md border border-gray-100 mb-4">
             <p className="text-sm text-gray-500 mb-1">Resumo do pedido</p>
             <div className="flex justify-between items-center font-medium">
-              <span>1x {product.title}</span>
+              <span>1x {product.name}</span>
               <span>R$ {product.price.toFixed(2)}</span>
             </div>
           </div>
