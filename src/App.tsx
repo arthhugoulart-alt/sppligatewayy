@@ -14,6 +14,8 @@ import Webhooks from "./pages/Webhooks";
 import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
 
+import Checkout from "./pages/Checkout";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -27,6 +29,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/oauth/callback" element={<OAuthCallback />} />
+            <Route path="/checkout/:productId" element={<Checkout />} />
             <Route
               path="/dashboard"
               element={

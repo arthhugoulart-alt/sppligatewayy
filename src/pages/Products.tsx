@@ -1,200 +1,244 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, ShoppingCart } from "lucide-react";
+import { Loader2, Plus, Link as LinkIcon, Trash2, ExternalLink } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useAuth } from "@/hooks/useAuth";
 
-interface Producer {
+interface Product {
   id: string;
-  business_name: string;
-  mp_connected: boolean;
+  title: string;
+  price: number;
+  description: string | null;
+  created_at: string;
 }
 
 export default function Products() {
-  const [producers, setProducers] = useState<Producer[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProducer, setSelectedProducer] = useState<string>("");
-  const [productName, setProductName] = useState("Produto Teste");
-  const [productPrice, setProductPrice] = useState("10.00");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newProduct, setNewProduct] = useState({ title: "", price: "", description: "" });
   const { toast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
-    fetchConnectedProducers();
-  }, []);
+    fetchProducts();
+  }, [user]);
 
-  const fetchConnectedProducers = async () => {
+  const fetchProducts = async () => {
+    if (!user) return;
     try {
-      const { data, error } = await supabase
+      // First get the producer ID for the current user
+      const { data: producer } = await supabase
         .from("producers")
-        .select("id, business_name, mp_connected")
-        .eq("mp_connected", true);
+        .select("id")
+        .eq("email", user.email)
+        .single();
+
+      if (!producer) {
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("producer_id", producer.id)
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setProducers(data || []);
+      setProducts(data || []);
     } catch (error) {
-      console.error("Error fetching producers:", error);
-      toast({
-        variant: "destructive",
-        title: "Erro ao carregar produtores",
-        description: "Não foi possível carregar a lista de produtores conectados.",
-      });
+      console.error("Error fetching products:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBuy = async () => {
-    if (!selectedProducer) {
+  const handleCreateProduct = async () => {
+    if (!newProduct.title || !newProduct.price) {
       toast({
         variant: "destructive",
-        title: "Selecione um produtor",
-        description: "É necessário selecionar um produtor para simular a venda.",
+        title: "Campos obrigatórios",
+        description: "Preencha nome e preço do produto.",
       });
       return;
     }
 
-    setIsProcessing(true);
+    setIsCreating(true);
     try {
-      // 1. Get Session Token
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      const { data: producer } = await supabase
+        .from("producers")
+        .select("id")
+        .eq("email", user?.email)
+        .single();
 
-      if (!token) throw new Error("Usuário não autenticado");
+      if (!producer) throw new Error("Conta de produtor não encontrada.");
 
-      // 2. Direct Fetch to Edge Function
-      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`;
-      console.log("Chamando Edge Function:", functionUrl);
-
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          producerId: selectedProducer,
-          paymentData: {
-            title: productName,
-            price: parseFloat(productPrice),
-            successUrl: window.location.origin + "/dashboard",
-            failureUrl: window.location.origin + "/dashboard",
-          },
-        }),
+      const { error } = await supabase.from("products").insert({
+        producer_id: producer.id,
+        title: newProduct.title,
+        price: parseFloat(newProduct.price),
+        description: newProduct.description,
       });
 
-      const data = await response.json();
-      console.log("Resposta Edge Function:", data);
+      if (error) throw error;
 
-      if (!response.ok) {
-        throw new Error(data.error || `Erro Edge Function: ${response.status} ${response.statusText}`);
-      }
-
-      if (data.error) throw new Error(data.error);
-
-      // Redirect to Mercado Pago Checkout
-      if (data.init_point) {
-        window.location.href = data.init_point;
-      } else {
-        throw new Error("Link de pagamento (init_point) não retornado pelo Mercado Pago.");
-      }
+      toast({
+        title: "Produto criado!",
+        description: "Agora você pode compartilhar o link de checkout.",
+      });
+      
+      setIsCreateOpen(false);
+      setNewProduct({ title: "", price: "", description: "" });
+      fetchProducts();
 
     } catch (error: any) {
-      console.error("Payment error:", error);
       toast({
         variant: "destructive",
-        title: "Erro ao criar pagamento",
-        description: error.message || "Verifique o console para mais detalhes.",
+        title: "Erro ao criar",
+        description: error.message,
       });
     } finally {
-      setIsProcessing(false);
+      setIsCreating(false);
     }
+  };
+
+  const copyCheckoutLink = (productId: string) => {
+    const link = `${window.location.origin}/checkout/${productId}`;
+    navigator.clipboard.writeText(link);
+    toast({
+      title: "Link copiado!",
+      description: "Link de checkout copiado para a área de transferência.",
+    });
+  };
+
+  const openCheckoutLink = (productId: string) => {
+    const link = `${window.location.origin}/checkout/${productId}`;
+    window.open(link, '_blank');
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Simulador de Vendas</h2>
-          <p className="text-muted-foreground">
-            Crie um produto fictício e simule uma compra para testar o split de pagamentos.
-          </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Meus Produtos</h2>
+            <p className="text-muted-foreground">
+              Gerencie seus produtos e gere links de pagamento.
+            </p>
+          </div>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Novo Produto
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Criar Novo Produto</DialogTitle>
+                <DialogDescription>
+                  Defina os detalhes do produto para começar a vender.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Nome do Produto</Label>
+                  <Input 
+                    value={newProduct.title}
+                    onChange={(e) => setNewProduct({...newProduct, title: e.target.value})}
+                    placeholder="Ex: Consultoria Premium"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Preço (R$)</Label>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={newProduct.price}
+                    onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Descrição (Opcional)</Label>
+                  <Input 
+                    value={newProduct.description}
+                    onChange={(e) => setNewProduct({...newProduct, description: e.target.value})}
+                    placeholder="Breve descrição do produto"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>
+                <Button onClick={handleCreateProduct} disabled={isCreating}>
+                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar Produto"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Novo Pedido</CardTitle>
-              <CardDescription>Simule a compra de um cliente final.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Produtor (Vendedor)</Label>
-                <Select value={selectedProducer} onValueChange={setSelectedProducer}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o produtor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {loading ? (
-                      <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                    ) : producers.length === 0 ? (
-                      <SelectItem value="empty" disabled>Nenhum produtor conectado</SelectItem>
-                    ) : (
-                      producers.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.business_name || "Sem nome"}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+        {loading ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : products.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+              <div className="rounded-full bg-secondary p-4 mb-4">
+                <ShoppingCart className="h-8 w-8 text-muted-foreground" />
               </div>
-
-              <div className="space-y-2">
-                <Label>Nome do Produto</Label>
-                <Input 
-                  value={productName} 
-                  onChange={(e) => setProductName(e.target.value)} 
-                  placeholder="Ex: Curso de Marketing" 
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Preço (BRL)</Label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  value={productPrice} 
-                  onChange={(e) => setProductPrice(e.target.value)} 
-                  placeholder="0.00" 
-                />
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleBuy} 
-                disabled={isProcessing || !selectedProducer}
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processando...
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Comprar Agora (Teste)
-                  </>
-                )}
-              </Button>
+              <h3 className="text-lg font-semibold">Nenhum produto encontrado</h3>
+              <p className="text-sm text-muted-foreground max-w-sm mt-2 mb-4">
+                Você ainda não criou nenhum produto. Comece agora para gerar seus links de pagamento.
+              </p>
+              <Button onClick={() => setIsCreateOpen(true)}>Criar Primeiro Produto</Button>
             </CardContent>
           </Card>
-        </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {products.map((product) => (
+              <Card key={product.id}>
+                <CardHeader>
+                  <CardTitle>{product.title}</CardTitle>
+                  <CardDescription className="line-clamp-2">
+                    {product.description || "Sem descrição"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    R$ {product.price.toFixed(2)}
+                  </div>
+                </CardContent>
+                <CardFooter className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => copyCheckoutLink(product.id)}>
+                    <LinkIcon className="mr-2 h-4 w-4" />
+                    Copiar Link
+                  </Button>
+                  <Button variant="secondary" size="icon" onClick={() => openCheckoutLink(product.id)}>
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
