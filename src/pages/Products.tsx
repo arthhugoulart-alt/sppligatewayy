@@ -61,6 +61,7 @@ export default function Products() {
       const { data, error } = await supabase
         .from("producers")
         .select("id, business_name")
+        .eq("user_id", user?.id)
         .order("business_name");
 
       if (error) throw error;
@@ -71,31 +72,22 @@ export default function Products() {
   };
 
   const fetchProducts = async () => {
-    if (!user || !user.email) {
+    if (!user) {
       setLoading(false);
       return;
     }
 
     try {
-      // First get the producer ID for the current user (default producer)
-      const { data: producer, error: producerError } = await supabase
-        .from("producers")
-        .select("id")
-        .eq("email", user.email)
-        .maybeSingle();
-
-      if (producerError) {
-        console.error("Error fetching producer:", producerError);
-        setLoading(false);
-        return;
-      }
-
-      // If user has a producer account, fetch their products
-      // Or fetch all products for the user (depends on implementation, assuming user sees all products they have access to)
-      // For now, let's fetch products regardless of producer_id filter to show all products created
+      // Fetch products where the associated producer belongs to the current user
       const { data, error } = await supabase
         .from("products")
-        .select("*")
+        .select(`
+          *,
+          producers!inner (
+            user_id
+          )
+        `)
+        .eq("producers.user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
