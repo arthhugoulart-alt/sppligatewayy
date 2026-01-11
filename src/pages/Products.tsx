@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Plus, Link as LinkIcon, Trash2, ExternalLink } from "lucide-react";
+import { Loader2, Plus, Link as LinkIcon, ExternalLink, ShoppingCart } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,20 +36,33 @@ export default function Products() {
   const { user } = useAuth();
 
   useEffect(() => {
-    fetchProducts();
+    if (user) {
+      fetchProducts();
+    }
   }, [user]);
 
   const fetchProducts = async () => {
-    if (!user) return;
+    if (!user || !user.email) {
+      setLoading(false);
+      return;
+    }
+
     try {
       // First get the producer ID for the current user
-      const { data: producer } = await supabase
+      const { data: producer, error: producerError } = await supabase
         .from("producers")
         .select("id")
         .eq("email", user.email)
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid 406 error if not found
+
+      if (producerError) {
+        console.error("Error fetching producer:", producerError);
+        setLoading(false);
+        return;
+      }
 
       if (!producer) {
+        console.warn("Producer not found for email:", user.email);
         setLoading(false);
         return;
       }
@@ -64,6 +77,11 @@ export default function Products() {
       setProducts(data || []);
     } catch (error) {
       console.error("Error fetching products:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar",
+        description: "Não foi possível carregar seus produtos.",
+      });
     } finally {
       setLoading(false);
     }
