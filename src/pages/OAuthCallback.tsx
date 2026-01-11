@@ -39,6 +39,9 @@ export default function OAuthCallback() {
         body: { code, producerId, redirectUri: `${window.location.origin}/oauth/callback` },
       });
 
+      console.log("Edge Function Response:", data);
+      console.log("Edge Function Error:", error);
+
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
