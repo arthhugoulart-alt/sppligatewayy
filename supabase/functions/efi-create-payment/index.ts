@@ -19,6 +19,27 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
     ? 'https://pix-h.api.efipay.com.br/oauth/token'
     : 'https://pix.api.efipay.com.br/oauth/token';
 
+const EFI_CA_CHAIN_URL = Deno.env.get('EFI_SANDBOX') === 'true'
+    ? 'https://certificados.efipay.com.br/webhooks/certificate-chain-homolog.crt'
+    : 'https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt';
+
+/**
+ * Busca a cadeia de certificados (CA) oficial da EFI para validação do servidor
+ */
+async function fetchEfiCaChain(): Promise<string> {
+    try {
+        console.log(`[EFI] Buscando CA oficial em: ${EFI_CA_CHAIN_URL}`);
+        const response = await fetch(EFI_CA_CHAIN_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const caCerts = await response.text();
+        console.log('[EFI] Cadeia de CA carregada com sucesso.');
+        return caCerts;
+    } catch (e: any) {
+        console.warn(`[EFI] Aviso: Não foi possível buscar CA oficial (${e.message}). Usando defaults do sistema.`);
+        return '';
+    }
+}
+
 /**
  * Extrai certificado e chave do P12 (Base64)
  */
@@ -68,14 +89,10 @@ function extractCertsFromP12(p12Base64: string) {
         if (allCerts.length === 0) throw new Error('Nenhum certificado encontrado no arquivo .p12');
 
         // 3. Encontrar o Certificado que corresponde à Chave Privada (Obrigatório para mTLS)
-        // Comparamos o componente 'n' (modulus) da chave pública para garantir o par correto
         const clientCert = allCerts.find((cert: any) => cert.publicKey.n.toString() === key.n.toString());
 
-        if (!clientCert) {
-            console.warn('[EFI] Aviso: Não foi possível confirmar se a chave corresponde ao certificado.');
-        } else {
-            console.log('[EFI] Identidade confirmada: Chave e Certificado formam um par válido.');
-            // Colocar o certificado do cliente como o primeiro da lista
+        if (clientCert) {
+            console.log('[EFI] Identidade verificada: Chave e certificado formam um par válido.');
             const otherCerts = allCerts.filter((c: any) => c !== clientCert);
             allCerts.splice(0, allCerts.length, clientCert, ...otherCerts);
         }
@@ -87,14 +104,10 @@ function extractCertsFromP12(p12Base64: string) {
         const privateKeyInfo = pki.wrapRsaPrivateKey(pki.privateKeyToAsn1(key));
         const keyPem = pki.privateKeyInfoToPem(privateKeyInfo).trim();
 
-        // 5. Diagnóstico
-        console.log(`[EFI DIAG] Assunto: ${allCerts[0].subject.attributes.map((a: any) => a.value).join(', ')}`);
-        console.log(`[EFI DIAG] Válido até: ${allCerts[0].validity.notAfter}`);
-
         return { certPem: certChainPem, keyPem };
     } catch (e: any) {
         console.error('[EFI] Erro Crítico no Certificado:', e);
-        throw new Error(`Falha no Certificado: ${e.message || e}`);
+        throw new Error(`Falha no Certificado: ${e.message}`);
     }
 }
 
@@ -121,7 +134,7 @@ async function getEfiAccessToken(client: any): Promise<string> {
             headers: {
                 'Authorization': `Basic ${credentials}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'
+                'User-Agent': 'Mozilla/5.0 (edge-function)'
             },
             body: JSON.stringify({ grant_type: 'client_credentials' }),
             client: client
@@ -130,14 +143,14 @@ async function getEfiAccessToken(client: any): Promise<string> {
         if (!response.ok) {
             const errorText = await response.text();
             console.error('[EFI] Resposta do Banco:', errorText);
-            throw new Error(`Banco recusou conexão (HTTP ${response.status}). Verifique se o Client ID é de PRODUÇÃO.`);
+            throw new Error(`O banco recusou a conexão (HTTP ${response.status}). Verifique o ID de Produção.`);
         }
 
         const data = await response.json();
         return data.access_token;
     } catch (e: any) {
         console.error('[EFI] Erro TLS:', e.message);
-        throw new Error(`CONEXÃO RECUSADA: O banco fechou a conexão silenciosamente. Garanta que o Client ID é da aba PRODUÇÃO e que o certificado enviado é o correto.`);
+        throw new Error(`CONEXÃO RECUSADA: Handshake TLS falhou. Verifique se o ID é de PRODUÇÃO e o certificado é o correto.`);
     }
 }
 
@@ -173,12 +186,14 @@ Deno.serve(async (req) => {
         }
 
         const { certPem, keyPem } = extractCertsFromP12(certBase64);
+        const caCerts = await fetchEfiCaChain();
 
-        // Criar cliente HTTP com certificado mutuo TLS
+        // Criar cliente HTTP com certificado mutuo TLS e CA de confiança
         // @ts-ignore: Deno.createHttpClient is available in Supabase Edge Functions
         const httpClient = Deno.createHttpClient({
             certChain: certPem,
             privateKey: keyPem,
+            caCerts: caCerts ? [caCerts] : undefined
         });
 
         const supabase = createClient(
