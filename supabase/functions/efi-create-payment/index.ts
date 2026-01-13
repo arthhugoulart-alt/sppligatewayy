@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import forge from 'npm:node-forge@1.3.1'
+import forge from 'https://esm.sh/node-forge@1.3.1?bundle&target=deno'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -21,31 +21,35 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
-        // Garantir acesso ao objeto forge correto (lidando com diferenças de ESM/CJS)
-        let forgeObj = forge as any;
-        if (forgeObj.default) forgeObj = forgeObj.default;
+        // Tentar encontrar o objeto raiz do forge
+        let f: any = forge;
+        if (f.default) f = f.default;
 
-        console.log('[DEBUG] Forge keys:', Object.keys(forgeObj).slice(0, 10));
-        console.log('[DEBUG] PKCS12 module available:', !!forgeObj.pkcs12);
+        console.log('[DEBUG] Forge keys:', Object.keys(f).join(', '));
+
+        // Tentar encontrar o módulo pkcs12 em diferentes locais possíveis
+        const pkcs12Module = f.pkcs12 || (f.pki && f.pki.pkcs12) || (f.default && f.default.pkcs12);
+
+        console.log('[DEBUG] PKCS12 module found:', !!pkcs12Module);
 
         // Remover possíveis espaços ou quebras de linha
         const cleanBase64 = p12Base64.replace(/\s/g, '');
-        const p12Der = forgeObj.util.decode64(cleanBase64);
-        const p12Asn1 = forgeObj.asn1.fromDer(p12Der);
+        const p12Der = f.util.decode64(cleanBase64);
+        const p12Asn1 = f.asn1.fromDer(p12Der);
 
         // EFI geralmente usa senha vazia por padrão, mas permitimos configurar via Secret
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
 
-        if (!forgeObj.pkcs12 || !forgeObj.pkcs12.pkcs12FromP12Asn1) {
-            throw new Error(`Biblioteca node-forge carregada sem suporte a PKCS#12. Chaves disponíveis: ${Object.keys(forgeObj).join(',')}`);
+        if (!pkcs12Module || !pkcs12Module.pkcs12FromP12Asn1) {
+            throw new Error(`Biblioteca node-forge sem módulo PKCS#12. Chaves disponíveis no ROOT: ${Object.keys(f).join(', ')}`);
         }
 
-        const p12 = forgeObj.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
+        const p12 = pkcs12Module.pkcs12FromP12Asn1(p12Asn1, password);
 
-        const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
-        const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+        const certBags = p12.getBags({ bagType: f.pki.oids.certBag });
+        const keyBags = p12.getBags({ bagType: f.pki.oids.pkcs8ShroudedKeyBag });
 
-        if (!certBags[forge.pki.oids.certBag] || !keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]) {
+        if (!certBags[f.pki.oids.certBag] || !keyBags[f.pki.oids.pkcs8ShroudedKeyBag]) {
             throw new Error('Certificado ou Chave Privada não encontrados dentro do arquivo .p12');
         }
 
