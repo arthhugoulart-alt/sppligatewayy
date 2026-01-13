@@ -111,12 +111,13 @@ function extractCertsFromP12(p12Base64: string) {
  * Obtém o access token do EFI Bank usando client credentials e mTLS
  */
 async function getEfiAccessToken(client: any): Promise<string> {
-    const clientId = Deno.env.get('EFI_CLIENT_ID');
-    const clientSecret = Deno.env.get('EFI_CLIENT_SECRET');
+    const clientId = Deno.env.get('EFI_CLIENT_ID') || '';
+    const clientSecret = Deno.env.get('EFI_CLIENT_SECRET') || '';
     const isSandbox = Deno.env.get('EFI_SANDBOX') === 'true';
 
-    console.log(`[EFI] Tentando conexão mTLS em: ${isSandbox ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}`);
-    console.log(`[EFI] URL de Auth: ${EFI_AUTH_URL}`);
+    console.log(`[EFI] Conectando em: ${isSandbox ? 'HOMOLOGAÇÃO (Sandbox)' : 'PRODUÇÃO'}`);
+    console.log(`[EFI] Client ID (início): ${clientId.substring(0, 15)}...`);
+    console.log(`[EFI] URL: ${EFI_AUTH_URL}`);
 
     if (!clientId || !clientSecret) {
         throw new Error('Configuração EFI incompleta: Faltam EFI_CLIENT_ID ou EFI_CLIENT_SECRET');
@@ -146,7 +147,10 @@ async function getEfiAccessToken(client: any): Promise<string> {
         const data = await response.json();
         return data.access_token;
     } catch (e: any) {
-        console.error('[EFI] Falha na requisição de Token:', e.message);
+        console.error('[EFI] Erro de Conexão Crítico:', e.message);
+        if (e.message.includes('peer closed connection')) {
+            throw new Error('A Efí recusou a conexão. Verifique se o Client_ID/Secret é de PRODUÇÃO e se a Chave PIX está correta.');
+        }
         throw e;
     }
 }
