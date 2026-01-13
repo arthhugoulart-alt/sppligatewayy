@@ -47,6 +47,7 @@ import {
   FileText,
   Edit,
   CreditCard,
+  Banknote,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -65,6 +66,9 @@ interface Producer {
   document_number: string | null;
   mp_user_id: string | null;
   mp_connected: boolean;
+  efi_connected?: boolean;
+  efi_account_id?: string | null;
+  efi_pix_key?: string | null;
   status: string;
   platform_fee_percentage: number;
   created_at: string;
@@ -76,6 +80,14 @@ export default function Producers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEfiDialogOpen, setIsEfiDialogOpen] = useState(false);
+  const [efiFormData, setEfiFormData] = useState({
+    producerId: "",
+    efiAccountId: "",
+    pixKey: "",
+    pixKeyType: "cpf" as "cpf" | "cnpj" | "email" | "phone" | "random",
+  });
+  const [connectingEfi, setConnectingEfi] = useState(false);
   const [formData, setFormData] = useState({
     business_name: "",
     email: "",
@@ -102,7 +114,7 @@ export default function Producers() {
 
       if (error) throw error;
       setProducers(data || []);
-      
+
       // If user has no producer account, open the creation dialog automatically
       if (!data || data.length === 0) {
         setIsDialogOpen(true);
@@ -121,7 +133,7 @@ export default function Producers() {
 
   const handleSaveProducer = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       if (editingId) {
         // Update existing producer
@@ -229,7 +241,7 @@ export default function Producers() {
   const initiateOAuthConnect = (producerId: string) => {
     // URL de OAuth do Mercado Pago (sandbox)
     const clientId = import.meta.env.VITE_MP_APP_ID; // Configurado via .env
-    
+
     if (!clientId) {
       toast({
         variant: "destructive",
@@ -241,10 +253,64 @@ export default function Producers() {
 
     const redirectUri = `${window.location.origin}/oauth/callback`;
     const state = btoa(JSON.stringify({ producerId }));
-    
+
     const authUrl = `https://auth.mercadopago.com/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-    
+
     window.open(authUrl, "_blank");
+  };
+
+  const openEfiConnectDialog = (producerId: string) => {
+    setEfiFormData({
+      producerId,
+      efiAccountId: "",
+      pixKey: "",
+      pixKeyType: "cpf",
+    });
+    setIsEfiDialogOpen(true);
+  };
+
+  const handleConnectEfi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnectingEfi(true);
+
+    try {
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/efi-connect-account`;
+
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          producerId: efiFormData.producerId,
+          efiAccountId: efiFormData.efiAccountId,
+          pixKey: efiFormData.pixKey,
+          pixKeyType: efiFormData.pixKeyType,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || "Erro ao conectar EFI Bank");
+      }
+
+      toast({
+        title: "EFI Bank conectado!",
+        description: "Sua conta EFI foi vinculada com sucesso.",
+      });
+
+      setIsEfiDialogOpen(false);
+      fetchProducers();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao conectar EFI Bank",
+        description: error.message,
+      });
+    } finally {
+      setConnectingEfi(false);
+    }
   };
 
   const filteredProducers = producers.filter(
@@ -301,8 +367,8 @@ export default function Producers() {
                 <DialogHeader>
                   <DialogTitle>{editingId ? "Editar Meus Dados" : "Ativar Recebimentos"}</DialogTitle>
                   <DialogDescription>
-                    {editingId 
-                      ? "Atualize seus dados comerciais abaixo." 
+                    {editingId
+                      ? "Atualize seus dados comerciais abaixo."
                       : "Preencha seus dados para começar a vender."}
                   </DialogDescription>
                 </DialogHeader>
@@ -443,6 +509,7 @@ export default function Producers() {
                     <TableHead>Taxa</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Mercado Pago</TableHead>
+                    <TableHead>EFI Bank</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -476,10 +543,10 @@ export default function Producers() {
                           {producer.status === "active"
                             ? "Ativo"
                             : producer.status === "pending"
-                            ? "Pendente"
-                            : producer.status === "suspended"
-                            ? "Suspenso"
-                            : "Inativo"}
+                              ? "Pendente"
+                              : producer.status === "suspended"
+                                ? "Suspenso"
+                                : "Inativo"}
                         </StatusBadge>
                       </TableCell>
                       <TableCell>
@@ -495,6 +562,24 @@ export default function Producers() {
                             onClick={() => initiateOAuthConnect(producer.id)}
                           >
                             <ExternalLink className="mr-2 h-3 w-3" />
+                            Conectar
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {producer.efi_connected ? (
+                          <div className="flex items-center gap-2 text-orange-600">
+                            <CheckCircle className="h-4 w-4" />
+                            <span className="text-sm">Conectado</span>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEfiConnectDialog(producer.id)}
+                            className="border-orange-300 text-orange-600 hover:bg-orange-50"
+                          >
+                            <Banknote className="mr-2 h-3 w-3" />
                             Conectar
                           </Button>
                         )}
@@ -528,7 +613,7 @@ export default function Producers() {
                               Ver pagamentos
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={() => handleDelete(producer.id)}
                             >
@@ -546,6 +631,83 @@ export default function Producers() {
           </CardContent>
         </Card>
       </div>
+
+      {/* EFI Bank Connection Dialog */}
+      <Dialog open={isEfiDialogOpen} onOpenChange={setIsEfiDialogOpen}>
+        <DialogContent>
+          <form onSubmit={handleConnectEfi}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Banknote className="h-5 w-5 text-orange-500" />
+                Conectar EFI Bank
+              </DialogTitle>
+              <DialogDescription>
+                Informe os dados da sua conta EFI Bank para receber pagamentos via PIX.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="efi_account_id">Identificador da Conta EFI *</Label>
+                <Input
+                  id="efi_account_id"
+                  value={efiFormData.efiAccountId}
+                  onChange={(e) =>
+                    setEfiFormData({ ...efiFormData, efiAccountId: e.target.value })
+                  }
+                  placeholder="Ex: conta_123456"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Encontre este identificador no painel da sua conta EFI Bank.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pix_key">Chave PIX (opcional)</Label>
+                <Input
+                  id="pix_key"
+                  value={efiFormData.pixKey}
+                  onChange={(e) =>
+                    setEfiFormData({ ...efiFormData, pixKey: e.target.value })
+                  }
+                  placeholder="Sua chave PIX"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pix_key_type">Tipo da Chave PIX</Label>
+                <Select
+                  value={efiFormData.pixKeyType}
+                  onValueChange={(value: "cpf" | "cnpj" | "email" | "phone" | "random") =>
+                    setEfiFormData({ ...efiFormData, pixKeyType: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cpf">CPF</SelectItem>
+                    <SelectItem value="cnpj">CNPJ</SelectItem>
+                    <SelectItem value="email">E-mail</SelectItem>
+                    <SelectItem value="phone">Telefone</SelectItem>
+                    <SelectItem value="random">Chave Aleatória</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEfiDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="bg-orange-500 hover:bg-orange-600"
+                disabled={connectingEfi}
+              >
+                {connectingEfi ? "Conectando..." : "Conectar EFI Bank"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

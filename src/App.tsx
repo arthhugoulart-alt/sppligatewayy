@@ -15,6 +15,7 @@ import OAuthCallback from "./pages/OAuthCallback";
 import NotFound from "./pages/NotFound";
 
 import Checkout from "./pages/Checkout";
+import CheckoutEfi from "./pages/CheckoutEfi";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/oauth/callback" element={<OAuthCallback />} />
             <Route path="/checkout/:productId" element={<Checkout />} />
+            <Route path="/checkout-efi/:productId" element={<CheckoutEfi />} />
             <Route
               path="/dashboard"
               element={
