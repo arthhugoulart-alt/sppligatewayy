@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
+import forge from 'https://esm.sh/node-forge@1.3.1'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -16,9 +17,34 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
     : 'https://pix.api.efipay.com.br/oauth/token';
 
 /**
- * Obtém o access token do EFI Bank usando client credentials
+ * Extrai certificado e chave do P12 (Base64)
  */
-async function getEfiAccessToken(): Promise<string> {
+function extractCertsFromP12(p12Base64: string) {
+    try {
+        const p12Der = forge.util.decode64(p12Base64);
+        const p12Asn1 = forge.asn1.fromDer(p12Der);
+        const p12 = forge.pkcs12.pkcs12FromP12Asn1(p12Asn1, ''); // Assumindo senha vazia
+
+        const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+        const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+
+        const cert = certBags[forge.pki.oids.certBag][0].cert;
+        const key = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key;
+
+        const certPem = forge.pki.certificateToPem(cert);
+        const keyPem = forge.pki.privateKeyToPem(key);
+
+        return { certPem, keyPem };
+    } catch (e) {
+        console.error('Erro ao extrair certificado P12:', e);
+        throw new Error('Falha ao processar certificado EFI (.p12). Verifique se o Base64 está correto.');
+    }
+}
+
+/**
+ * Obtém o access token do EFI Bank usando client credentials e mTLS
+ */
+async function getEfiAccessToken(client: any): Promise<string> {
     const clientId = Deno.env.get('EFI_CLIENT_ID');
     const clientSecret = Deno.env.get('EFI_CLIENT_SECRET');
 
@@ -37,6 +63,7 @@ async function getEfiAccessToken(): Promise<string> {
         body: JSON.stringify({
             grant_type: 'client_credentials'
         }),
+        client: client // Usando o cliente com mTLS
     });
 
     if (!response.ok) {
@@ -72,12 +99,27 @@ Deno.serve(async (req) => {
 
         console.log(`[EFI] Criando pagamento para produtor: ${producerId}`, paymentData);
 
+        // 1. Inicializar cliente mTLS (Obrigatório para API Pix da EFI)
+        const certBase64 = Deno.env.get('EFI_CERTIFICATE_BASE64');
+        if (!certBase64) {
+            throw new Error('Configuração EFI incompleta: Falta EFI_CERTIFICATE_BASE64');
+        }
+
+        const { certPem, keyPem } = extractCertsFromP12(certBase64);
+
+        // Criar cliente HTTP com certificado mutuo TLS
+        // @ts-ignore: Deno.createHttpClient is available in Supabase Edge Functions
+        const httpClient = Deno.createHttpClient({
+            certChain: certPem,
+            privateKey: keyPem,
+        });
+
         const supabase = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        // 1. Buscar dados do produtor e configuração EFI
+        // 2. Buscar dados do produtor e configuração EFI
         const { data: producer, error: producerError } = await supabase
             .from('producers')
             .select('*, efi_config(*)')
@@ -93,7 +135,7 @@ Deno.serve(async (req) => {
             throw new Error('Produtor não está conectado ao EFI Bank');
         }
 
-        // 2. Calcular taxas (split)
+        // 3. Calcular taxas (split)
         const amount = Number(paymentData.price);
 
         // Taxa da plataforma (padrão 10%)
@@ -108,25 +150,23 @@ Deno.serve(async (req) => {
 
         console.log(`[EFI SPLIT] Total: R$${amount}, Taxa: R$${platformFee} (${feePercentage}%), Produtor: R$${producerAmount}`);
 
-        // 3. Obter access token do EFI
-        const accessToken = await getEfiAccessToken();
+        // 4. Obter access token do EFI (usando mTLS)
+        const accessToken = await getEfiAccessToken(httpClient);
 
-        // 4. Gerar txid único
+        // 5. Gerar txid único
         const txid = generateTxid();
         const externalReference = `efi_${producerId}_${Date.now()}`;
 
-        // 5. Criar configuração de Split
-        // O split do EFI funciona com contas EFI. A conta do produtor recebe o valor líquido.
+        // 6. Configurações da plataforma
         const efiAccountProducer = producer.efi_config.account_identifier;
-        const efiAccountPlatform = Deno.env.get('EFI_ACCOUNT_ID'); // Conta da plataforma
-        const platformPixKey = Deno.env.get('EFI_PIX_KEY'); // Chave PIX da plataforma
+        const efiAccountPlatform = Deno.env.get('EFI_ACCOUNT_ID');
+        const platformPixKey = Deno.env.get('EFI_PIX_KEY');
 
         if (!platformPixKey) {
             throw new Error('Configuração incompleta: EFI_PIX_KEY não configurada');
         }
 
-        // 6. Criar cobrança PIX com split
-        // Usando a API de cobrança imediata do EFI com split
+        // 7. Criar cobrança PIX
         const cobPayload = {
             calendario: {
                 expiracao: 3600 // 1 hora de validade
@@ -138,63 +178,23 @@ Deno.serve(async (req) => {
             valor: {
                 original: amount.toFixed(2)
             },
-            chave: platformPixKey, // Chave PIX da plataforma (recebe a taxa)
+            chave: platformPixKey,
             solicitacaoPagador: `Compra: ${paymentData.title}`,
             infoAdicionais: [
-                {
-                    nome: 'Produto',
-                    valor: paymentData.title
-                },
-                {
-                    nome: 'Referência',
-                    valor: externalReference
-                }
+                { nome: 'Produto', valor: paymentData.title },
+                { nome: 'Referência', valor: externalReference }
             ]
         };
 
-        // Criar cobrança com split
-        // O EFI requer que primeiro criemos uma configuração de split
-        // e depois vinculemos à cobrança
-
-        // 6.1 Criar configuração de split
-        const splitConfigPayload = {
-            descricao: `Split para ${producer.business_name}`,
-            lancamento: {
-                imediato: true
-            },
-            split: {
-                divisorPrincipal: {
-                    cpf: Deno.env.get('EFI_PLATFORM_CPF') || undefined,
-                    cnpj: Deno.env.get('EFI_PLATFORM_CNPJ') || undefined,
-                    conta: efiAccountPlatform
-                },
-                minhaParte: {
-                    tipo: 'porcentagem',
-                    valor: feePercentage.toFixed(2)
-                },
-                repasses: [
-                    {
-                        tipo: 'porcentagem',
-                        valor: (100 - feePercentage).toFixed(2),
-                        favorecido: {
-                            cpf: producer.document_type === 'CPF' ? producer.document_number?.replace(/\D/g, '') : undefined,
-                            cnpj: producer.document_type === 'CNPJ' ? producer.document_number?.replace(/\D/g, '') : undefined,
-                            conta: efiAccountProducer
-                        }
-                    }
-                ]
-            }
-        };
-
-        // Primeiro, criar a cobrança imediata (sem split para simplificar)
-        // O split será registrado internamente para controle
         const cobResponse = await fetch(`${EFI_API_URL}/v2/cob/${txid}`, {
             method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(cobPayload)
+            body: JSON.stringify(cobPayload),
+            // @ts-ignore
+            client: httpClient
         });
 
         if (!cobResponse.ok) {
@@ -206,12 +206,14 @@ Deno.serve(async (req) => {
         const cobData = await cobResponse.json();
         console.log('[EFI] Cobrança criada:', cobData);
 
-        // 7. Gerar QR Code
+        // 8. Gerar QR Code
         const qrResponse = await fetch(`${EFI_API_URL}/v2/loc/${cobData.loc.id}/qrcode`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
-            }
+            },
+            // @ts-ignore
+            client: httpClient
         });
 
         let qrData = { qrcode: '', imagemQrcode: '' };
@@ -221,7 +223,7 @@ Deno.serve(async (req) => {
             console.warn('[EFI] Não foi possível gerar QR Code, usando fallback');
         }
 
-        // 8. Salvar pagamento no banco de dados
+        // 9. Salvar pagamento no banco de dados
         const { error: paymentError } = await supabase
             .from('payments')
             .insert({
