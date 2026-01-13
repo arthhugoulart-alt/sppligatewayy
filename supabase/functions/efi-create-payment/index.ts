@@ -88,7 +88,17 @@ function extractCertsFromP12(p12Base64: string) {
 
         const keyPem = pki.privateKeyToPem(key);
 
-        console.log(`[EFI] Certificados extraídos: ${certBagArray.length} certificado(s) na cadeia`);
+        // --- DIAGNÓSTICO DO CERTIFICADO ---
+        const firstCert = certBagArray[0].cert;
+        const subject = firstCert.subject.attributes
+            .map((a: any) => `${a.shortName || a.name}=${a.value}`)
+            .join(', ');
+
+        console.log(`[EFI DIAG] Assunto: ${subject}`);
+        console.log(`[EFI DIAG] Válido de: ${firstCert.validity.notBefore}`);
+        console.log(`[EFI DIAG] Válido até: ${firstCert.validity.notAfter}`);
+        console.log(`[EFI DIAG] Cadeia extraída: ${certBagArray.length} cert(s)`);
+        // ----------------------------------
 
         return { certPem: certChainPem, keyPem };
     } catch (e: any) {
@@ -103,6 +113,10 @@ function extractCertsFromP12(p12Base64: string) {
 async function getEfiAccessToken(client: any): Promise<string> {
     const clientId = Deno.env.get('EFI_CLIENT_ID');
     const clientSecret = Deno.env.get('EFI_CLIENT_SECRET');
+    const isSandbox = Deno.env.get('EFI_SANDBOX') === 'true';
+
+    console.log(`[EFI] Tentando conexão mTLS em: ${isSandbox ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}`);
+    console.log(`[EFI] URL de Auth: ${EFI_AUTH_URL}`);
 
     if (!clientId || !clientSecret) {
         throw new Error('Configuração EFI incompleta: Faltam EFI_CLIENT_ID ou EFI_CLIENT_SECRET');
@@ -110,26 +124,31 @@ async function getEfiAccessToken(client: any): Promise<string> {
 
     const credentials = btoa(`${clientId}:${clientSecret}`);
 
-    const response = await fetch(EFI_AUTH_URL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Basic ${credentials}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            grant_type: 'client_credentials'
-        }),
-        client: client // Usando o cliente com mTLS
-    });
+    try {
+        const response = await fetch(EFI_AUTH_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${credentials}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                grant_type: 'client_credentials'
+            }),
+            client: client
+        });
 
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Erro ao obter token EFI:', error);
-        throw new Error(`Erro de autenticação EFI: ${error.error_description || JSON.stringify(error)}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[EFI] Erro na resposta do Token:', errorText);
+            throw new Error(`Erro EFI (Token): ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        return data.access_token;
+    } catch (e: any) {
+        console.error('[EFI] Falha na requisição de Token:', e.message);
+        throw e;
     }
-
-    const data = await response.json();
-    return data.access_token;
 }
 
 /**
