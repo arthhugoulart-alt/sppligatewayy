@@ -34,79 +34,67 @@ function extractCertsFromP12(p12Base64: string) {
         let extractFn: Function | undefined;
         let oids: any;
         let pki: any;
-        let foundPath = '';
 
         if (forge.pkcs12 && typeof forge.pkcs12.pkcs12FromP12Asn1 === 'function') {
             extractFn = forge.pkcs12.pkcs12FromP12Asn1;
             oids = forge.pki.oids;
             pki = forge.pki;
-            foundPath = 'forge.pkcs12';
         } else if (forge.pki && forge.pki.pkcs12 && typeof forge.pki.pkcs12.pkcs12FromP12Asn1 === 'function') {
             extractFn = forge.pki.pkcs12.pkcs12FromP12Asn1;
             oids = forge.pki.oids;
             pki = forge.pki;
-            foundPath = 'forge.pki.pkcs12';
         } else if (forge.default && forge.default.pkcs12 && typeof forge.default.pkcs12.pkcs12FromP12Asn1 === 'function') {
             extractFn = forge.default.pkcs12.pkcs12FromP12Asn1;
             oids = forge.default.pki.oids;
             pki = forge.default.pki;
-            foundPath = 'forge.default.pkcs12';
-        } else if (forge.pkcs12 && typeof forge.pkcs12.pkcs12FromAsn1 === 'function') { // Fallback for older versions or different exports
-            extractFn = forge.pkcs12.pkcs12FromAsn1;
-            oids = forge.pki.oids;
-            pki = forge.pki;
-            foundPath = 'forge.pkcs12.pkcs12FromAsn1';
         }
 
         if (typeof extractFn !== 'function' || !oids || !pki) {
-            console.error('[EFI] Estrutura do forge:', Object.keys(forge));
-            throw new Error('Não foi possível localizar a função pkcs12FromP12Asn1 ou módulos PKI/OIDs na biblioteca node-forge.');
+            throw new Error('Não foi possível localizar as funções de criptografia necessárias.');
         }
-        console.log(`[EFI] node-forge path successful: ${foundPath}`);
 
         const p12 = extractFn(p12Asn1, password);
 
-        const certBags = p12.getBags({ bagType: oids.certBag });
+        // 1. Extrair a Chave Privada
         const keyBags = p12.getBags({ bagType: oids.pkcs8ShroudedKeyBag });
-
         const key = keyBags[oids.pkcs8ShroudedKeyBag][0]?.key;
 
-        if (!key) {
-            throw new Error('Chave Privada não encontrada dentro do arquivo .p12');
+        if (!key) throw new Error('Chave Privada não encontrada no arquivo .p12');
+
+        // 2. Extrair todos os Certificados
+        const certBags = p12.getBags({ bagType: oids.certBag });
+        const allCerts = certBags[oids.certBag]?.map((bag: any) => bag.cert) || [];
+
+        if (allCerts.length === 0) throw new Error('Nenhum certificado encontrado no arquivo .p12');
+
+        // 3. Encontrar o Certificado que corresponde à Chave Privada (Obrigatório para mTLS)
+        // Comparamos o componente 'n' (modulus) da chave pública para garantir o par correto
+        const clientCert = allCerts.find((cert: any) => cert.publicKey.n.toString() === key.n.toString());
+
+        if (!clientCert) {
+            console.warn('[EFI] Aviso: Não foi possível confirmar se a chave corresponde ao certificado.');
+        } else {
+            console.log('[EFI] Identidade confirmada: Chave e Certificado formam um par válido.');
+            // Colocar o certificado do cliente como o primeiro da lista
+            const otherCerts = allCerts.filter((c: any) => c !== clientCert);
+            allCerts.splice(0, allCerts.length, clientCert, ...otherCerts);
         }
 
-        // Extrair TODOS os certificados (chain completo) do P12
-        const certBagArray = certBags[oids.certBag];
-        if (!certBagArray || certBagArray.length === 0) {
-            throw new Error('Nenhum certificado encontrado dentro do arquivo .p12');
-        }
+        // 4. Gerar PEMs formatados
+        const certChainPem = allCerts.map((c: any) => pki.certificateToPem(c)).join('\n');
 
-        // Concatenar todos os certificados em uma cadeia PEM
-        const certChainPem = certBagArray
-            .map((bag: any) => pki.certificateToPem(bag.cert))
-            .join('\n');
-
-        // CONVERSÃO CRUCIAL: PKCS#1 para PKCS#8
-        // Deno/RustLS muitas vezes exige o formato PKCS#8 (BEGIN PRIVATE KEY)
-        const privateKeyAsn1 = pki.privateKeyToAsn1(key);
-        const privateKeyInfo = pki.wrapRsaPrivateKey(privateKeyAsn1);
+        // Converter para PKCS#8 para compatibilidade máxima com Deno
+        const privateKeyInfo = pki.wrapRsaPrivateKey(pki.privateKeyToAsn1(key));
         const keyPem = pki.privateKeyInfoToPem(privateKeyInfo).trim();
 
-        // --- DIAGNÓSTICO DO CERTIFICADO ---
-        const firstCert = certBagArray[0].cert;
-        const subject = firstCert.subject.attributes
-            .map((a: any) => `${a.shortName || a.name}=${a.value}`)
-            .join(', ');
-
-        console.log(`[EFI DIAG] Assunto: ${subject}`);
-        console.log(`[EFI DIAG] Válido até: ${firstCert.validity.notAfter}`);
-        console.log(`[EFI DIAG] Cadeia extraída: ${certBagArray.length} cert(s)`);
-        // ----------------------------------
+        // 5. Diagnóstico
+        console.log(`[EFI DIAG] Assunto: ${allCerts[0].subject.attributes.map((a: any) => a.value).join(', ')}`);
+        console.log(`[EFI DIAG] Válido até: ${allCerts[0].validity.notAfter}`);
 
         return { certPem: certChainPem, keyPem };
     } catch (e: any) {
-        console.error('[EFI] Erro no processamento do certificado:', e);
-        throw new Error(`Erro no Certificado: ${e.message || e}`);
+        console.error('[EFI] Erro Crítico no Certificado:', e);
+        throw new Error(`Falha no Certificado: ${e.message || e}`);
     }
 }
 
@@ -119,14 +107,10 @@ async function getEfiAccessToken(client: any): Promise<string> {
     const isSandbox = Deno.env.get('EFI_SANDBOX') === 'true';
 
     console.log(`[EFI] Ambiente: ${isSandbox ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}`);
-    console.log(`[EFI] Client ID (início): ${clientId.substring(0, 20)}...`);
-
-    if (!isSandbox && clientId.includes('_H')) {
-        console.warn('⚠️ ALERTA: Você está usando um Client_ID de HOMOLOGAÇÃO com um certificado de PRODUÇÃO!');
-    }
+    console.log(`[EFI] Client ID: ${clientId.substring(0, 15)}...`);
 
     if (!clientId || !clientSecret) {
-        throw new Error('Configuração EFI incompleta: Faltam EFI_CLIENT_ID ou EFI_CLIENT_SECRET');
+        throw new Error('Faltam as credenciais EFI_CLIENT_ID ou EFI_CLIENT_SECRET nas Secrets.');
     }
 
     const credentials = btoa(`${clientId}:${clientSecret}`);
@@ -137,25 +121,23 @@ async function getEfiAccessToken(client: any): Promise<string> {
             headers: {
                 'Authorization': `Basic ${credentials}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'PostmanRuntime/7.26.8'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'
             },
-            body: JSON.stringify({
-                grant_type: 'client_credentials'
-            }),
+            body: JSON.stringify({ grant_type: 'client_credentials' }),
             client: client
         });
 
         if (!response.ok) {
             const errorText = await response.text();
             console.error('[EFI] Resposta do Banco:', errorText);
-            throw new Error(`Banco recusou credenciais: ${response.status}`);
+            throw new Error(`Banco recusou conexão (HTTP ${response.status}). Verifique se o Client ID é de PRODUÇÃO.`);
         }
 
         const data = await response.json();
         return data.access_token;
     } catch (e: any) {
-        console.error('[EFI] Erro na conexão TLS:', e.message);
-        throw new Error(`CONEXÃO RECUSADA: O banco fechou a conexão (Handshake Failure). Verifique se o Client ID é da aba PRODUÇÃO e se a Chave PIX está ativa.`);
+        console.error('[EFI] Erro TLS:', e.message);
+        throw new Error(`CONEXÃO RECUSADA: O banco fechou a conexão silenciosamente. Garanta que o Client ID é da aba PRODUÇÃO e que o certificado enviado é o correto.`);
     }
 }
 
