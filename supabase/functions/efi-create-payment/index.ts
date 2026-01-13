@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import forge from 'https://esm.sh/node-forge@1.3.1'
+import forge from 'npm:node-forge@1.3.1'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -21,14 +21,22 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
+        // Garantir acesso ao objeto forge correto (lidando com diferenças de ESM/CJS)
+        const forgeObj = (forge as any).pkcs12 ? forge : (forge as any).default || forge;
+
         // Remover possíveis espaços ou quebras de linha
         const cleanBase64 = p12Base64.replace(/\s/g, '');
-        const p12Der = forge.util.decode64(cleanBase64);
-        const p12Asn1 = forge.asn1.fromDer(p12Der);
+        const p12Der = forgeObj.util.decode64(cleanBase64);
+        const p12Asn1 = forgeObj.asn1.fromDer(p12Der);
 
         // EFI geralmente usa senha vazia por padrão, mas permitimos configurar via Secret
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
-        const p12 = forge.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
+
+        if (!forgeObj.pkcs12 || !forgeObj.pkcs12.pkcs12FromP12Asn1) {
+            throw new Error('Biblioteca node-forge carregada sem suporte a PKCS#12');
+        }
+
+        const p12 = forgeObj.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
 
         const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
         const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
