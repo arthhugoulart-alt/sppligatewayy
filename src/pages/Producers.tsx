@@ -274,35 +274,42 @@ export default function Producers() {
     setConnectingEfi(true);
 
     try {
-      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/efi-connect-account`;
+      console.log("[EFI] Iniciando conexão direta com o banco...");
 
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          producerId: efiFormData.producerId,
-          efiAccountId: efiFormData.efiAccountId,
-          pixKey: efiFormData.pixKey,
-          pixKeyType: efiFormData.pixKeyType,
-        }),
-      });
+      // 1. Atualizar a tabela de produtores
+      const { error: producerError } = await supabase
+        .from("producers")
+        .update({
+          efi_connected: true,
+          efi_account_id: efiFormData.efiAccountId,
+          efi_pix_key: efiFormData.pixKey,
+        })
+        .eq("id", efiFormData.producerId);
 
-      const result = await response.json();
+      if (producerError) throw producerError;
 
-      if (!result.success) {
-        throw new Error(result.error || "Erro ao conectar EFI Bank");
-      }
+      // 2. Inserir ou atualizar na tabela efi_config
+      const { error: configError } = await supabase
+        .from("efi_config")
+        .upsert({
+          producer_id: efiFormData.producerId,
+          account_identifier: efiFormData.efiAccountId,
+          pix_key: efiFormData.pixKey,
+          pix_key_type: efiFormData.pixKeyType,
+          is_valid: true,
+        }, { onConflict: 'producer_id' });
+
+      if (configError) throw configError;
 
       toast({
         title: "EFI Bank conectado!",
-        description: "Sua conta EFI foi vinculada com sucesso.",
+        description: "Sua conta EFI foi vinculada com sucesso no banco de dados.",
       });
 
       setIsEfiDialogOpen(false);
       fetchProducers();
     } catch (error: any) {
+      console.error("[EFI] Erro na conexão:", error);
       toast({
         variant: "destructive",
         title: "Erro ao conectar EFI Bank",
