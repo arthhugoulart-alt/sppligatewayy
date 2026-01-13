@@ -21,12 +21,21 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
-        const p12Der = forge.util.decode64(p12Base64);
+        // Remover possíveis espaços ou quebras de linha
+        const cleanBase64 = p12Base64.replace(/\s/g, '');
+        const p12Der = forge.util.decode64(cleanBase64);
         const p12Asn1 = forge.asn1.fromDer(p12Der);
-        const p12 = forge.pkcs12.pkcs12FromP12Asn1(p12Asn1, ''); // Assumindo senha vazia
+
+        // EFI geralmente usa senha vazia por padrão, mas permitimos configurar via Secret
+        const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
+        const p12 = forge.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
 
         const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
         const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+
+        if (!certBags[forge.pki.oids.certBag] || !keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]) {
+            throw new Error('Certificado ou Chave Privada não encontrados dentro do arquivo .p12');
+        }
 
         const cert = certBags[forge.pki.oids.certBag][0].cert;
         const key = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key;
@@ -36,8 +45,8 @@ function extractCertsFromP12(p12Base64: string) {
 
         return { certPem, keyPem };
     } catch (e) {
-        console.error('Erro ao extrair certificado P12:', e);
-        throw new Error('Falha ao processar certificado EFI (.p12). Verifique se o Base64 está correto.');
+        console.error('Erro detalhado ao extrair certificado P12:', e);
+        throw new Error(`Falha ao processar certificado EFI (.p12): ${e.message || e}. Verifique se a senha está correta ou se o Base64 não foi truncado.`);
     }
 }
 
