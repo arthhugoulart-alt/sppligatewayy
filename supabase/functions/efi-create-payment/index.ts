@@ -245,11 +245,11 @@ Deno.serve(async (req) => {
             ],
             // Configuração do Split Automático (EFI Bank)
             split: {
-                minhaParte: platformFee, // Valor que fica para a plataforma (dona do certificado)
+                minhaParte: platformFee.toFixed(2), // Valor que fica para a plataforma (dona do certificado)
                 repasses: [
                     {
                         accountId: producer.efi_config.account_identifier, // ID da conta EFI do produtor
-                        valor: producerAmount, // Valor que vai para o produtor
+                        valor: producerAmount.toFixed(2), // Valor que vai para o produtor
                         descricao: `Venda: ${paymentData.title}`
                     }
                 ]
