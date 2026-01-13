@@ -224,8 +224,9 @@ Deno.serve(async (req) => {
             throw new Error('Configuração incompleta: EFI_PIX_KEY não configurada');
         }
 
-        // 7. Criar cobrança PIX
-        const cobPayload = {
+        // 7. Criar cobrança PIX com SPLIT automático do EFI Bank
+        // Documentação EFI: O split deve ser enviado no campo 'split' dentro do 'cob'
+        const cobPayload: any = {
             calendario: {
                 expiracao: 3600 // 1 hora de validade
             },
@@ -241,8 +242,21 @@ Deno.serve(async (req) => {
             infoAdicionais: [
                 { nome: 'Produto', valor: paymentData.title },
                 { nome: 'Referência', valor: externalReference }
-            ]
+            ],
+            // Configuração do Split Automático (EFI Bank)
+            split: {
+                minhaParte: platformFee, // Valor que fica para a plataforma (dona do certificado)
+                repasses: [
+                    {
+                        accountId: producer.efi_config.account_identifier, // ID da conta EFI do produtor
+                        valor: producerAmount, // Valor que vai para o produtor
+                        descricao: `Venda: ${paymentData.title}`
+                    }
+                ]
+            }
         };
+
+        console.log('[EFI] Enviando cobrança com split:', JSON.stringify(cobPayload, null, 2));
 
         const cobResponse = await fetch(`${EFI_API_URL}/v2/cob/${txid}`, {
             method: 'PUT',
