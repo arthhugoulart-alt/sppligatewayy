@@ -22,7 +22,11 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
 function extractCertsFromP12(p12Base64: string) {
     try {
         // Garantir acesso ao objeto forge correto (lidando com diferenças de ESM/CJS)
-        const forgeObj = (forge as any).pkcs12 ? forge : (forge as any).default || forge;
+        let forgeObj = forge as any;
+        if (forgeObj.default) forgeObj = forgeObj.default;
+
+        console.log('[DEBUG] Forge keys:', Object.keys(forgeObj).slice(0, 10));
+        console.log('[DEBUG] PKCS12 module available:', !!forgeObj.pkcs12);
 
         // Remover possíveis espaços ou quebras de linha
         const cleanBase64 = p12Base64.replace(/\s/g, '');
@@ -33,7 +37,7 @@ function extractCertsFromP12(p12Base64: string) {
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
 
         if (!forgeObj.pkcs12 || !forgeObj.pkcs12.pkcs12FromP12Asn1) {
-            throw new Error('Biblioteca node-forge carregada sem suporte a PKCS#12');
+            throw new Error(`Biblioteca node-forge carregada sem suporte a PKCS#12. Chaves disponíveis: ${Object.keys(forgeObj).join(',')}`);
         }
 
         const p12 = forgeObj.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
