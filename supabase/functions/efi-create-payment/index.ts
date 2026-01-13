@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import forge from 'https://esm.sh/node-forge@1.3.1?bundle&target=deno'
+import forge from 'https://esm.sh/node-forge@1.3.1?bundle'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -21,8 +21,8 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
-        // Obter o objeto base do forge (lidando com importações ESM/Deno)
-        let f = (forge as any).default || forge;
+        // No bundle do esm.sh, o objeto costuma ser o próprio forge ou estar em .default
+        const f = (forge as any).pkcs12 ? forge : (forge as any).default || forge;
 
         const cleanBase64 = p12Base64.replace(/\s/g, '');
         const p12Der = f.util.decode64(cleanBase64);
@@ -30,14 +30,14 @@ function extractCertsFromP12(p12Base64: string) {
 
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
 
+        if (!f.pkcs12 || !f.pkcs12.pkcs12FromP12Asn1) {
+            console.log("Modules found:", Object.keys(f));
+            throw new Error(`Módulo PKCS12 não encontrado. Chaves: ${Object.keys(f).slice(0, 15).join(',')}`);
+        }
+
         // Tentar extrair o P12 (esta parte costuma falhar se a senha estiver errada)
         let p12;
-        try {
-            p12 = f.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
-        } catch (err: any) {
-            console.error('Erro na extração PKCS12:', err);
-            throw new Error(`Senha do certificado incorreta ou arquivo corrompido. Detalhe: ${err.message || err}`);
-        }
+        p12 = f.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
 
         const certBags = p12.getBags({ bagType: f.pki.oids.certBag });
         const keyBags = p12.getBags({ bagType: f.pki.oids.pkcs8ShroudedKeyBag });
