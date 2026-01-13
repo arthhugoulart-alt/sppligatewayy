@@ -103,6 +103,8 @@ Deno.serve(async (req) => {
         return new Response('ok', { headers: corsHeaders });
     }
 
+    console.log("[EFI] Início da função - Versão 2.1 (mTLS + Logs Detalhados)");
+
     try {
         const { producerId, paymentData } = await req.json();
 
