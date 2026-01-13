@@ -21,48 +21,41 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
-        // Tentar encontrar o objeto raiz do forge
-        let f: any = forge;
-        if (f.default) f = f.default;
+        // Obter o objeto base do forge (lidando com importações ESM/Deno)
+        let f = (forge as any).default || forge;
 
-        console.log('[DEBUG] Forge keys:', Object.keys(f).join(', '));
-
-        // Tentar encontrar o módulo pkcs12 em diferentes locais possíveis
-        const pkcs12Module = f.pkcs12 || (f.pki && f.pki.pkcs12) || (f.default && f.default.pkcs12);
-
-        console.log('[DEBUG] PKCS12 module found:', !!pkcs12Module);
-
-        // Remover possíveis espaços ou quebras de linha
         const cleanBase64 = p12Base64.replace(/\s/g, '');
         const p12Der = f.util.decode64(cleanBase64);
         const p12Asn1 = f.asn1.fromDer(p12Der);
 
-        // EFI geralmente usa senha vazia por padrão, mas permitimos configurar via Secret
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
 
-        if (!pkcs12Module || !pkcs12Module.pkcs12FromP12Asn1) {
-            throw new Error(`Biblioteca node-forge sem módulo PKCS#12. Chaves disponíveis no ROOT: ${Object.keys(f).join(', ')}`);
+        // Tentar extrair o P12 (esta parte costuma falhar se a senha estiver errada)
+        let p12;
+        try {
+            p12 = f.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
+        } catch (err: any) {
+            console.error('Erro na extração PKCS12:', err);
+            throw new Error(`Senha do certificado incorreta ou arquivo corrompido. Detalhe: ${err.message || err}`);
         }
-
-        const p12 = pkcs12Module.pkcs12FromP12Asn1(p12Asn1, password);
 
         const certBags = p12.getBags({ bagType: f.pki.oids.certBag });
         const keyBags = p12.getBags({ bagType: f.pki.oids.pkcs8ShroudedKeyBag });
 
-        if (!certBags[f.pki.oids.certBag] || !keyBags[f.pki.oids.pkcs8ShroudedKeyBag]) {
+        const cert = certBags[f.pki.oids.certBag][0]?.cert;
+        const key = keyBags[f.pki.oids.pkcs8ShroudedKeyBag][0]?.key;
+
+        if (!cert || !key) {
             throw new Error('Certificado ou Chave Privada não encontrados dentro do arquivo .p12');
         }
 
-        const cert = certBags[forge.pki.oids.certBag][0].cert;
-        const key = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key;
-
-        const certPem = forge.pki.certificateToPem(cert);
-        const keyPem = forge.pki.privateKeyToPem(key);
+        const certPem = f.pki.certificateToPem(cert);
+        const keyPem = f.pki.privateKeyToPem(key);
 
         return { certPem, keyPem };
-    } catch (e) {
-        console.error('Erro detalhado ao extrair certificado P12:', e);
-        throw new Error(`Falha ao processar certificado EFI (.p12): ${e.message || e}. Verifique se a senha está correta ou se o Base64 não foi truncado.`);
+    } catch (e: any) {
+        console.error('[EFI] Erro Crítico no Certificado:', e);
+        throw new Error(`Erro no Certificado: ${e.message || e}`);
     }
 }
 
