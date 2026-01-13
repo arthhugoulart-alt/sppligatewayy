@@ -33,6 +33,11 @@ interface Product {
   description: string | null;
   created_at: string;
   producer_id?: string;
+  producers?: {
+    business_name: string;
+    mp_connected: boolean;
+    efi_connected: boolean;
+  };
 }
 
 interface Producer {
@@ -86,7 +91,10 @@ export default function Products() {
         .select(`
           *,
           producers!inner (
-            user_id
+            user_id,
+            business_name,
+            mp_connected,
+            efi_connected
           )
         `)
         .eq("producers.user_id", user.id)
@@ -137,7 +145,7 @@ export default function Products() {
         title: "Produto criado!",
         description: "Agora você pode compartilhar o link de checkout.",
       });
-      
+
       setIsCreateOpen(false);
       setNewProduct({ name: "", price: "", description: "", producer_id: "" });
       fetchProducts();
@@ -153,17 +161,19 @@ export default function Products() {
     }
   };
 
-  const copyCheckoutLink = (productId: string) => {
-    const link = `${window.location.origin}/checkout/${productId}`;
+  const copyCheckoutLink = (product: Product, gateway: 'mp' | 'efi' = 'mp') => {
+    const path = gateway === 'efi' ? 'checkout-efi' : 'checkout';
+    const link = `${window.location.origin}/${path}/${product.id}`;
     navigator.clipboard.writeText(link);
     toast({
       title: "Link copiado!",
-      description: "Link de checkout copiado para a área de transferência.",
+      description: `Link de checkout (${gateway === 'efi' ? 'EFI PIX' : 'Mercado Pago'}) copiado.`,
     });
   };
 
-  const openCheckoutLink = (productId: string) => {
-    const link = `${window.location.origin}/checkout/${productId}`;
+  const openCheckoutLink = (product: Product, gateway: 'mp' | 'efi' = 'mp') => {
+    const path = gateway === 'efi' ? 'checkout-efi' : 'checkout';
+    const link = `${window.location.origin}/${path}/${product.id}`;
     window.open(link, '_blank');
   };
 
@@ -177,7 +187,7 @@ export default function Products() {
               Gerencie seus produtos e gere links de pagamento.
             </p>
           </div>
-          
+
           {producers.length === 0 && !loading ? (
             <Button onClick={() => navigate("/producers")}>
               Configurar Conta para Vender
@@ -203,7 +213,7 @@ export default function Products() {
                       <Label>Recebedor</Label>
                       <Select
                         value={newProduct.producer_id}
-                        onValueChange={(value) => setNewProduct({...newProduct, producer_id: value})}
+                        onValueChange={(value) => setNewProduct({ ...newProduct, producer_id: value })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione um recebedor" />
@@ -220,38 +230,38 @@ export default function Products() {
                   )}
                   <div className="space-y-2">
                     <Label>Nome do Produto</Label>
-                  <Input 
-                    value={newProduct.name}
-                    onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                    placeholder="Ex: Consultoria Premium"
-                  />
+                    <Input
+                      value={newProduct.name}
+                      onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                      placeholder="Ex: Consultoria Premium"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Preço (R$)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={newProduct.price}
+                      onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Descrição (Opcional)</Label>
+                    <Input
+                      value={newProduct.description}
+                      onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                      placeholder="Breve descrição do produto"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Preço (R$)</Label>
-                  <Input 
-                    type="number"
-                    step="0.01"
-                    value={newProduct.price}
-                    onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Descrição (Opcional)</Label>
-                  <Input 
-                    value={newProduct.description}
-                    onChange={(e) => setNewProduct({...newProduct, description: e.target.value})}
-                    placeholder="Breve descrição do produto"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>
-                <Button onClick={handleCreateProduct} disabled={isCreating}>
-                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar Produto"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>
+                  <Button onClick={handleCreateProduct} disabled={isCreating}>
+                    {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar Produto"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
             </Dialog>
           )}
         </div>
@@ -297,14 +307,53 @@ export default function Products() {
                     R$ {product.price.toFixed(2)}
                   </div>
                 </CardContent>
-                <CardFooter className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => copyCheckoutLink(product.id)}>
-                    <LinkIcon className="mr-2 h-4 w-4" />
-                    Copiar Link
-                  </Button>
-                  <Button variant="secondary" size="icon" onClick={() => openCheckoutLink(product.id)}>
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
+                <CardFooter className="flex flex-col gap-2">
+                  {product.producers?.efi_connected && (
+                    <div className="w-full flex gap-1">
+                      <Button
+                        variant="default"
+                        className="flex-1 bg-orange-500 hover:bg-orange-600"
+                        onClick={() => copyCheckoutLink(product, 'efi')}
+                      >
+                        <LinkIcon className="mr-2 h-4 w-4" />
+                        Link PIX (EFI)
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="bg-orange-100 text-orange-600 hover:bg-orange-200"
+                        onClick={() => openCheckoutLink(product, 'efi')}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {product.producers?.mp_connected && (
+                    <div className="w-full flex gap-1">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => copyCheckoutLink(product, 'mp')}
+                      >
+                        <LinkIcon className="mr-2 h-4 w-4" />
+                        Link Mercado Pago
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openCheckoutLink(product, 'mp')}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {!product.producers?.mp_connected && !product.producers?.efi_connected && (
+                    <p className="text-xs text-destructive text-center w-full">
+                      Nenhum gateway conectado
+                    </p>
+                  )}
                 </CardFooter>
               </Card>
             ))}
