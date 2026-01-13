@@ -100,7 +100,7 @@ function extractCertsFromP12(p12Base64: string) {
         console.log(`[EFI DIAG] Cadeia extraída: ${certBagArray.length} cert(s)`);
         // ----------------------------------
 
-        return { certPem: certChainPem, keyPem };
+        return { certPem: certChainPem, keyPem: keyPem.trim() };
     } catch (e: any) {
         console.error('[EFI] Erro no processamento do certificado:', e);
         throw new Error(`Erro no Certificado: ${e.message || e}`);
@@ -115,9 +115,12 @@ async function getEfiAccessToken(client: any): Promise<string> {
     const clientSecret = Deno.env.get('EFI_CLIENT_SECRET') || '';
     const isSandbox = Deno.env.get('EFI_SANDBOX') === 'true';
 
-    console.log(`[EFI] Conectando em: ${isSandbox ? 'HOMOLOGAÇÃO (Sandbox)' : 'PRODUÇÃO'}`);
-    console.log(`[EFI] Client ID (início): ${clientId.substring(0, 15)}...`);
-    console.log(`[EFI] URL: ${EFI_AUTH_URL}`);
+    console.log(`[EFI] Ambiente: ${isSandbox ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}`);
+    console.log(`[EFI] Client ID (início): ${clientId.substring(0, 20)}...`);
+
+    if (!isSandbox && clientId.includes('_H')) {
+        console.warn('⚠️ ALERTA: Você está usando um Client_ID de HOMOLOGAÇÃO em um ambiente de PRODUÇÃO. Isso causará erro de conexão!');
+    }
 
     if (!clientId || !clientSecret) {
         throw new Error('Configuração EFI incompleta: Faltam EFI_CLIENT_ID ou EFI_CLIENT_SECRET');
@@ -131,6 +134,7 @@ async function getEfiAccessToken(client: any): Promise<string> {
             headers: {
                 'Authorization': `Basic ${credentials}`,
                 'Content-Type': 'application/json',
+                'User-Agent': 'SupabaseEdgeFunction/1.0'
             },
             body: JSON.stringify({
                 grant_type: 'client_credentials'
@@ -140,16 +144,15 @@ async function getEfiAccessToken(client: any): Promise<string> {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[EFI] Erro na resposta do Token:', errorText);
+            console.error('[EFI] Resposta do Banco:', errorText);
             throw new Error(`Erro EFI (Token): ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
         return data.access_token;
     } catch (e: any) {
-        console.error('[EFI] Erro de Conexão Crítico:', e.message);
         if (e.message.includes('peer closed connection')) {
-            throw new Error('A Efí recusou a conexão. Verifique se o Client_ID/Secret é de PRODUÇÃO e se a Chave PIX está correta.');
+            console.error('[EFI] ERRO DE CONEXÃO: O banco recusou o certificado. Verifique se o Client ID e Secret são da aba PRODUÇÃO no painel da Efí.');
         }
         throw e;
     }
