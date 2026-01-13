@@ -86,7 +86,11 @@ function extractCertsFromP12(p12Base64: string) {
             .map((bag: any) => pki.certificateToPem(bag.cert))
             .join('\n');
 
-        const keyPem = pki.privateKeyToPem(key).trim();
+        // CONVERSÃO CRUCIAL: PKCS#1 para PKCS#8
+        // Deno/RustLS muitas vezes exige o formato PKCS#8 (BEGIN PRIVATE KEY)
+        const privateKeyAsn1 = pki.privateKeyToAsn1(key);
+        const privateKeyInfo = pki.wrapRsaPrivateKey(privateKeyAsn1);
+        const keyPem = pki.privateKeyInfoToPem(privateKeyInfo).trim();
 
         // --- DIAGNÓSTICO DO CERTIFICADO ---
         const firstCert = certBagArray[0].cert;
@@ -118,7 +122,7 @@ async function getEfiAccessToken(client: any): Promise<string> {
     console.log(`[EFI] Client ID (início): ${clientId.substring(0, 20)}...`);
 
     if (!isSandbox && clientId.includes('_H')) {
-        console.warn('⚠️ ALERTA CRÍTICO: Você está usando um Client_ID de HOMOLOGAÇÃO com um certificado de PRODUÇÃO. Isso NÃO funciona na Efí.');
+        console.warn('⚠️ ALERTA: Você está usando um Client_ID de HOMOLOGAÇÃO com um certificado de PRODUÇÃO!');
     }
 
     if (!clientId || !clientSecret) {
@@ -133,7 +137,7 @@ async function getEfiAccessToken(client: any): Promise<string> {
             headers: {
                 'Authorization': `Basic ${credentials}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (edge-function)'
+                'User-Agent': 'PostmanRuntime/7.26.8'
             },
             body: JSON.stringify({
                 grant_type: 'client_credentials'
@@ -143,19 +147,15 @@ async function getEfiAccessToken(client: any): Promise<string> {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[EFI] Resposta do Banco (Erro):', errorText);
-            throw new Error(`O banco recusou as credenciais (HTTP ${response.status}). Verifique Client ID/Secret.`);
+            console.error('[EFI] Resposta do Banco:', errorText);
+            throw new Error(`Banco recusou credenciais: ${response.status}`);
         }
 
         const data = await response.json();
         return data.access_token;
     } catch (e: any) {
         console.error('[EFI] Erro na conexão TLS:', e.message);
-
-        if (e.message.includes('peer closed connection') || e.message.includes('unexpected eof')) {
-            throw new Error('CONEXÃO RECUSADA PELA EFÍ: O banco fechou a conexão silenciosamente. Isso ocorre quando o CERTIFICADO não combina com o CLIENT_ID utilizado. POR FAVOR, use o Client_ID da aba PRODUÇÃO do painel Efí.');
-        }
-        throw e;
+        throw new Error(`CONEXÃO RECUSADA: O banco fechou a conexão (Handshake Failure). Verifique se o Client ID é da aba PRODUÇÃO e se a Chave PIX está ativa.`);
     }
 }
 
