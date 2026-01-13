@@ -1,5 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import forge from 'https://esm.sh/node-forge@1.3.1?bundle'
+import * as forgeModule from 'npm:node-forge@1.3.1'
+
+// Lidar com a diferença de exportação entre Node e Deno
+const forge: any = (forgeModule as any).default || forgeModule;
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -21,40 +24,64 @@ const EFI_AUTH_URL = Deno.env.get('EFI_SANDBOX') === 'true'
  */
 function extractCertsFromP12(p12Base64: string) {
     try {
-        // No bundle do esm.sh, o objeto costuma ser o próprio forge ou estar em .default
-        const f = (forge as any).pkcs12 ? forge : (forge as any).default || forge;
-
         const cleanBase64 = p12Base64.replace(/\s/g, '');
-        const p12Der = f.util.decode64(cleanBase64);
-        const p12Asn1 = f.asn1.fromDer(p12Der);
+        const p12Der = forge.util.decode64(cleanBase64);
+        const p12Asn1 = forge.asn1.fromDer(p12Der);
 
         const password = Deno.env.get('EFI_CERTIFICATE_PASSWORD') || '';
 
-        if (!f.pkcs12 || !f.pkcs12.pkcs12FromP12Asn1) {
-            console.log("Modules found:", Object.keys(f));
-            throw new Error(`Módulo PKCS12 não encontrado. Chaves: ${Object.keys(f).slice(0, 15).join(',')}`);
+        // Procurar a função de extração em vários locais possíveis no objeto forge
+        let extractFn: Function | undefined;
+        let oids: any;
+        let pki: any;
+        let foundPath = '';
+
+        if (forge.pkcs12 && typeof forge.pkcs12.pkcs12FromP12Asn1 === 'function') {
+            extractFn = forge.pkcs12.pkcs12FromP12Asn1;
+            oids = forge.pki.oids;
+            pki = forge.pki;
+            foundPath = 'forge.pkcs12';
+        } else if (forge.pki && forge.pki.pkcs12 && typeof forge.pki.pkcs12.pkcs12FromP12Asn1 === 'function') {
+            extractFn = forge.pki.pkcs12.pkcs12FromP12Asn1;
+            oids = forge.pki.oids;
+            pki = forge.pki;
+            foundPath = 'forge.pki.pkcs12';
+        } else if (forge.default && forge.default.pkcs12 && typeof forge.default.pkcs12.pkcs12FromP12Asn1 === 'function') {
+            extractFn = forge.default.pkcs12.pkcs12FromP12Asn1;
+            oids = forge.default.pki.oids;
+            pki = forge.default.pki;
+            foundPath = 'forge.default.pkcs12';
+        } else if (forge.pkcs12 && typeof forge.pkcs12.pkcs12FromAsn1 === 'function') { // Fallback for older versions or different exports
+            extractFn = forge.pkcs12.pkcs12FromAsn1;
+            oids = forge.pki.oids;
+            pki = forge.pki;
+            foundPath = 'forge.pkcs12.pkcs12FromAsn1';
         }
 
-        // Tentar extrair o P12 (esta parte costuma falhar se a senha estiver errada)
-        let p12;
-        p12 = f.pkcs12.pkcs12FromP12Asn1(p12Asn1, password);
+        if (typeof extractFn !== 'function' || !oids || !pki) {
+            console.error('[EFI] Estrutura do forge:', Object.keys(forge));
+            throw new Error('Não foi possível localizar a função pkcs12FromP12Asn1 ou módulos PKI/OIDs na biblioteca node-forge.');
+        }
+        console.log(`[EFI] node-forge path successful: ${foundPath}`);
 
-        const certBags = p12.getBags({ bagType: f.pki.oids.certBag });
-        const keyBags = p12.getBags({ bagType: f.pki.oids.pkcs8ShroudedKeyBag });
+        const p12 = extractFn(p12Asn1, password);
 
-        const cert = certBags[f.pki.oids.certBag][0]?.cert;
-        const key = keyBags[f.pki.oids.pkcs8ShroudedKeyBag][0]?.key;
+        const certBags = p12.getBags({ bagType: oids.certBag });
+        const keyBags = p12.getBags({ bagType: oids.pkcs8ShroudedKeyBag });
+
+        const cert = certBags[oids.certBag][0]?.cert;
+        const key = keyBags[oids.pkcs8ShroudedKeyBag][0]?.key;
 
         if (!cert || !key) {
             throw new Error('Certificado ou Chave Privada não encontrados dentro do arquivo .p12');
         }
 
-        const certPem = f.pki.certificateToPem(cert);
-        const keyPem = f.pki.privateKeyToPem(key);
+        const certPem = pki.certificateToPem(cert);
+        const keyPem = pki.privateKeyToPem(key);
 
         return { certPem, keyPem };
     } catch (e: any) {
-        console.error('[EFI] Erro Crítico no Certificado:', e);
+        console.error('[EFI] Erro no processamento do certificado:', e);
         throw new Error(`Erro no Certificado: ${e.message || e}`);
     }
 }
