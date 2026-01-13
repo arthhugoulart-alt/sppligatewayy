@@ -69,17 +69,28 @@ function extractCertsFromP12(p12Base64: string) {
         const certBags = p12.getBags({ bagType: oids.certBag });
         const keyBags = p12.getBags({ bagType: oids.pkcs8ShroudedKeyBag });
 
-        const cert = certBags[oids.certBag][0]?.cert;
         const key = keyBags[oids.pkcs8ShroudedKeyBag][0]?.key;
 
-        if (!cert || !key) {
-            throw new Error('Certificado ou Chave Privada não encontrados dentro do arquivo .p12');
+        if (!key) {
+            throw new Error('Chave Privada não encontrada dentro do arquivo .p12');
         }
 
-        const certPem = pki.certificateToPem(cert);
+        // Extrair TODOS os certificados (chain completo) do P12
+        const certBagArray = certBags[oids.certBag];
+        if (!certBagArray || certBagArray.length === 0) {
+            throw new Error('Nenhum certificado encontrado dentro do arquivo .p12');
+        }
+
+        // Concatenar todos os certificados em uma cadeia PEM
+        const certChainPem = certBagArray
+            .map((bag: any) => pki.certificateToPem(bag.cert))
+            .join('\n');
+
         const keyPem = pki.privateKeyToPem(key);
 
-        return { certPem, keyPem };
+        console.log(`[EFI] Certificados extraídos: ${certBagArray.length} certificado(s) na cadeia`);
+
+        return { certPem: certChainPem, keyPem };
     } catch (e: any) {
         console.error('[EFI] Erro no processamento do certificado:', e);
         throw new Error(`Erro no Certificado: ${e.message || e}`);
